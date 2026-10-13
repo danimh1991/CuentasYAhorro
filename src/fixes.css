@@ -125,8 +125,229 @@ main {
   max-height: 520px;
 }
 
+.quote-warning {
+  margin: 0 0 18px;
+  padding: 13px 15px;
+  border: 1px solid #efc9a8;
+  border-radius: 10px;
+  background: #fff5eb;
+  color: #865126;
+}
+
+.liberty-metrics,
+.stock-kpis {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #09110ecc;
+  backdrop-filter: blur(4px);
+}
+
+.modal-card {
+  width: min(1180px, 96vw);
+  max-height: 88vh;
+  overflow: auto;
+  border-radius: 18px;
+  background: white;
+  padding: 26px;
+  box-shadow: 0 28px 80px #0005;
+}
+
+.modal-heading,
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-heading h2,
+.market-add h3 {
+  margin: 0;
+  font: 700 21px Manrope;
+}
+
+.modal-copy {
+  color: #6f7c75;
+  font-size: 13px;
+}
+
+.instrument-modal table {
+  min-width: 900px;
+}
+
+.instrument-modal td input {
+  min-width: 150px;
+  width: 100%;
+  padding: 8px;
+}
+
+.instrument-modal td:first-child input {
+  min-width: 250px;
+}
+
+.currency-field {
+  max-width: 72px!important;
+  text-transform: uppercase;
+}
+
+.icon-button {
+  border: 0;
+  background: #eff3f0;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  font-size: 22px;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.savings-editor {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.savings-card label {
+  display: block;
+  color: #65736c;
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 12px;
+}
+
+.savings-card input {
+  width: 100%;
+  margin-top: 5px;
+  padding: 9px;
+  text-align: right;
+}
+
+.savings-history {
+  margin-bottom: 18px;
+}
+
+.savings-history table {
+  min-width: 1650px;
+}
+
+.dividend-panel {
+  margin-top: 18px;
+}
+
+.empty-table {
+  padding: 30px;
+  color: #89958e;
+  text-align: center;
+}
+
+.market-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin: 18px 0;
+}
+
+.market-card {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.market-card h3 {
+  margin: 0 0 4px;
+  font: 700 17px Manrope;
+}
+
+.market-card small,
+.market-card span {
+  color: #87938d;
+  font-size: 11px;
+}
+
+.market-card>strong {
+  font: 700 25px Manrope;
+}
+
+.market-add {
+  display: grid;
+  grid-template-columns: 1.2fr repeat(4, 1fr) 75px auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.market-add input {
+  min-width: 0;
+  width: 100%;
+  padding: 10px;
+}
+
+.stock-charts {
+  margin-bottom: 18px;
+}
+
+.bar-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 125px 1fr 92px;
+  gap: 9px;
+  align-items: center;
+  font-size: 11px;
+}
+
+.bar-row>span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar-row>i {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #eef2ef;
+}
+
+.bar-row>i>b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #4eb493;
+}
+
+.bar-row>i>b.negative-bar { background: #df796c; }
+.bar-row>i>b.positive-bar { background: #4eb493; }
+
+.bar-row>strong {
+  text-align: right;
+}
+
 @media(max-width: 1280px) {
   .movement-form {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .liberty-metrics,
+  .stock-kpis,
+  .savings-editor {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .market-add {
     grid-template-columns: repeat(3, 1fr);
   }
 }
@@ -146,6 +367,14 @@ main {
   }
 
   .movement-form {
+    grid-template-columns: 1fr;
+  }
+
+  .liberty-metrics,
+  .stock-kpis,
+  .savings-editor,
+  .market-grid,
+  .market-add {
     grid-template-columns: 1fr;
   }
 }

@@ -28,7 +28,7 @@ def cents(value) -> int:
 
 name_map = {"Nasqad 100": "Nasdaq 100"}
 sheet = WB["Bolsa"]
-lines = ["PRAGMA foreign_keys = ON;", "BEGIN TRANSACTION;"]
+lines = ["PRAGMA foreign_keys = ON;"]
 
 for row in range(56, sheet.max_row + 1):
     trade_date = sheet.cell(row, 16).value
@@ -58,7 +58,6 @@ for row in range(56, sheet.max_row + 1):
         f"{round((price or 0) * 10000)}, 10000, {cents(total)}, 'EUR', 1, {sql(broker)}, 'Excel');"
     )
 
-lines.append("COMMIT;")
 OUTPUT.parent.mkdir(parents=True, exist_ok=True)
 OUTPUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
 print(f"Generated {OUTPUT} with {len(lines) - 3} stock movements")

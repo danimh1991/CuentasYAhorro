@@ -10,11 +10,15 @@
 - El fondo se llama **Fondo de pensiones empresa** y admite nuevos meses y aportaciones futuras.
 - La aplicación sigue siendo personal, con un único PIN.
 - Las cotizaciones intentan obtenerse sin API de pago mediante Yahoo Finance, con conversión a euros usando Frankfurter/ECB y entrada manual como respaldo.
+- Los valores que solo se vigilaban y los índices de referencia viven en **Mercados**, separados de las inversiones.
+- Liberty y Bolsa permiten editar nombre, ISIN, ticker, símbolo de referencia y divisa desde un popup.
+- Bolsa registra dividendos por separado, convierte otras divisas a euros y no contempla comisiones.
+- Si no se obtiene una cotización, la aplicación muestra el error y mantiene disponible la entrada manual.
+- **Ahorro** replica los cuatro bloques mensuales y los movimientos de fondos de “Detalle Ahorro”.
 
 ## Dudas pendientes
 
-1. **Valores de la imagen que no aparecen como posiciones del Excel.** HCL Tech, Vanguard US 500, Vanguard Global y Acción IBEX 35 aparecen en la captura, pero no como posiciones actuales en las tablas importadas. ¿Son inversiones que hay que añadir o solo valores que vigilabas?
-2. **Índices de referencia.** NDX, US500 y ES35 parecen índices para comparar, no posiciones compradas. Por ahora no los he incluido como activos. ¿Quieres que aparezcan en una sección de referencias?
-3. **Valores históricos sin símbolo en la imagen.** El Excel sí contiene IAG, Netflix, Telefónica y ROVI; se conservan como históricos y se han asociado a sus símbolos habituales. En Liberty también aparecen fondos antiguos sin identificador en la captura: Fidelity European Growth, Carmignac Patrimoine, C-Quadrat y Liberty European Stock Market. ¿Necesitarás volver a activarlos y consultar su cotización?
-4. **Bolsa, siguiente nivel de detalle.** Ya están compras, ventas y reinversiones. Queda decidir más adelante si añadimos operaciones separadas para dividendos, comisiones, retenciones, splits y cambio de divisa.
-5. **Proveedor gratuito.** La solución actual no necesita clave, pero la cobertura de fondos por ISIN no está garantizada. La entrada manual evita bloquear el cierre. Si algún fondo falla de forma repetida, habrá que elegir una API especializada o introducir una clave propia.
+1. **Movimientos de Ahorro.** El histórico de fondos ya está importado y visible, pero de momento la edición se centra en los cuatro bloques mensuales. Queda decidir si también quieres altas y correcciones de esos movimientos desde la aplicación.
+2. **Histórico de dividendos.** La sección permite registrar dividendos nuevos. El Excel no ofrece un histórico claramente separado para importarlo; queda confirmar si deseas reconstruir dividendos anteriores manualmente.
+3. **Mercados.** La primera versión guarda y muestra la última cotización de cada referencia. Queda decidir si quieres conservar además un histórico propio para comparar índices y valores vigilados mediante gráficas.
+4. **Altas de inversiones.** Los activos existentes pueden editarse, y en Mercados se pueden añadir referencias. Queda decidir si Liberty y Bolsa también necesitan crear y desactivar inversiones completas desde sus respectivos popups.
