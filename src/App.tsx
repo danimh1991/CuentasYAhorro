@@ -1534,7 +1534,6 @@ function Liberty({
           <strong>{euro.format(total)}</strong>
         </div>
       </section>
-      <HistoryPanel category="liberty" title="Evolución Liberty" />
       <ReturnHistory category="liberty" periodId={period.id} />
       {editing && (
         <InstrumentEditor
@@ -3376,7 +3375,6 @@ function Stocks({
           </table>
         </div>
       </section>
-      <HistoryPanel category="stocks" title="Evolución Bolsa" />
       {editing && (
         <InstrumentEditor
           items={state.items}
