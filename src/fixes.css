@@ -76,6 +76,27 @@ main {
 .button.compact { padding: 7px 11px; font-size: 11px; }
 .chart-canvas { position: relative; height: 150px; }
 .chart-canvas svg { position: absolute; inset: 0; height: 100%; }
+.chart-grid-line {
+  stroke: #e8edea;
+  stroke-width: 1;
+}
+.chart-y-axis {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 9%;
+  pointer-events: none;
+}
+.chart-y-axis span {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  color: #7e8a84;
+  font-size: 9px;
+  line-height: 1;
+  text-align: right;
+  transform: translateY(-50%);
+}
+.chart-labels-with-axis { padding-left: 10%; }
 .chart-point {
   position: absolute;
   width: 10px;
@@ -105,6 +126,54 @@ main {
   font-size: 11px;
 }
 .chart-tooltip span { color: #218b6d; font-weight: 700; }
+.chart-tooltip small { margin-top: 3px; color: #7c8882; }
+.zero-line {
+  stroke: #9da8a2;
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+}
+.chart-mode {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid #dfe5e0;
+  border-radius: 9px;
+  background: #f5f7f5;
+}
+.chart-mode button {
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 10px;
+  background: transparent;
+  color: #6d7973;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+.chart-mode button.active {
+  background: white;
+  color: #57499b;
+  box-shadow: 0 2px 7px #18201d12;
+}
+.return-formula {
+  margin: -7px 0 14px;
+  color: #718078;
+  font-size: 12px;
+}
+.zero-toggle {
+  display: flex;
+  width: max-content;
+  align-items: center;
+  gap: 7px;
+  margin: -4px 0 12px;
+  color: #66736c;
+  font-size: 11px;
+  font-weight: 700;
+}
+.zero-toggle input { accent-color: #6f61b5; }
+.return-point { border-color: #6f61b5; }
+.return-point.active { background: #eeeafd; }
+.return-point.negative-point { border-color: #d76e64; }
+.return-history-panel .chart-tooltip span { color: #6f61b5; }
 
 .movement-form {
   display: grid;
@@ -162,6 +231,19 @@ main {
   margin-right: 4px;
   font-size: 11px;
 }
+
+.edit-row-button {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid #dfe5e0;
+  border-radius: 50%;
+  background: #fff;
+  color: #427a68;
+  cursor: pointer;
+}
+.edit-row-button:hover { background: #eaf5f0; }
 
 .kind-a,
 .type-legend span:nth-child(1) b { background: #ddf5eb; color: #187257; }

@@ -891,11 +891,14 @@ function LineChart({
     point.value_cents ?? 0,
     secondKey ? (point[secondKey] ?? 0) : (point.value_cents ?? 0),
   ]);
-  const min = Math.min(...values) * 0.96;
-  const max = Math.max(...values) * 1.04;
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const padding = Math.max((rawMax - rawMin) * 0.08, Math.abs(rawMax) * 0.02, 100);
+  const min = rawMin - padding;
+  const max = rawMax + padding;
   const coordinates = (key: "value_cents" | "contributions_cents") =>
     recent.map((point, index) => ({
-      x: (index / (recent.length - 1)) * 100,
+      x: 10 + (index / (recent.length - 1)) * 88,
       y:
         88 -
         (((point[key] ?? 0) - min) / Math.max(max - min, 1)) * 72,
@@ -907,6 +910,10 @@ function LineChart({
   const main = makePoints("value_cents");
   const mainCoordinates = coordinates("value_cents");
   const tickIndexes = [...new Set([0, Math.floor((recent.length - 1) / 2), recent.length - 1])];
+  const yTicks = [max, (max + min) / 2, min].map((value, index) => ({
+    value,
+    y: 16 + index * 36,
+  }));
   return (
     <div className="line-chart">
       <div className="chart-canvas">
@@ -923,8 +930,19 @@ function LineChart({
             <stop offset="1" stopColor="#62c7a5" stopOpacity="0" />
           </linearGradient>
         </defs>
+        {yTicks.map((tick) => (
+          <line
+            key={tick.y}
+            x1="10"
+            x2="98"
+            y1={tick.y}
+            y2={tick.y}
+            className="chart-grid-line"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
         <polygon
-          points={`0,92 ${main} 100,92`}
+          points={`10,92 ${main} 98,92`}
           fill={`url(#fill-${secondKey || "main"})`}
         />
         <polyline
@@ -945,6 +963,13 @@ function LineChart({
           />
         )}
       </svg>
+      <div className="chart-y-axis" aria-hidden="true">
+        {yTicks.map((tick) => (
+          <span key={tick.y} style={{ top: `${tick.y}%` }}>
+            {cents(Math.round(tick.value))}
+          </span>
+        ))}
+      </div>
       {mainCoordinates.map((coordinate, index) => (
         <button
           type="button"
@@ -968,7 +993,7 @@ function LineChart({
           <span>{cents(recent[hovered].value_cents)}</span>
         </div>
       )}
-      <div className="chart-labels">
+      <div className="chart-labels chart-labels-with-axis">
         {tickIndexes.map((index) => (
           <span key={recent[index].month}>{labelMonth(recent[index].month)}</span>
         ))}
@@ -1510,6 +1535,7 @@ function Liberty({
         </div>
       </section>
       <HistoryPanel category="liberty" title="Evolución Liberty" />
+      <ReturnHistory category="liberty" periodId={period.id} />
       {editing && (
         <InstrumentEditor
           items={state.items}
@@ -2228,14 +2254,21 @@ function HistoryPanel({
   );
 }
 
-function StockReturnHistory({ periodId }: { periodId: number }) {
+function ReturnHistory({
+  periodId,
+  category,
+}: {
+  periodId: number;
+  category: "liberty" | "stocks";
+}) {
   const [points, setPoints] = useState<StockReturnPoint[]>([]);
   const [mode, setMode] = useState<"amount" | "percent">("amount");
   const [zoomMonths, setZoomMonths] = useState(24);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [keepZeroVisible, setKeepZeroVisible] = useState(category === "liberty");
   useEffect(() => {
     api<{ points: StockReturnPoint[] }>(
-      `/api/stocks/returns-history?periodId=${periodId}`,
+      `/api/${category}/returns-history?periodId=${periodId}`,
     ).then((data) => {
       const active = data.points.filter((point) => point.contributed_cents > 0);
       setPoints(active);
@@ -2244,14 +2277,15 @@ function StockReturnHistory({ periodId }: { periodId: number }) {
       );
       setHovered(null);
     });
-  }, [periodId]);
+  }, [category, periodId]);
   const visibleCount = Math.min(zoomMonths, points.length);
   const recent = points.slice(-visibleCount);
   const values = recent.map((point) =>
     mode === "amount" ? point.result_cents : (point.return_rate ?? 0),
   );
-  const rawMin = Math.min(...values, 0);
-  const rawMax = Math.max(...values, 0);
+  const scaleValues = keepZeroVisible ? [...values, 0] : values;
+  const rawMin = Math.min(...scaleValues);
+  const rawMax = Math.max(...scaleValues);
   const padding = Math.max((rawMax - rawMin) * 0.12, mode === "amount" ? 100 : 0.01);
   const min = rawMin - padding;
   const max = rawMax + padding;
@@ -2259,7 +2293,7 @@ function StockReturnHistory({ periodId }: { periodId: number }) {
     const value = mode === "amount" ? point.result_cents : (point.return_rate ?? 0);
     return {
       value,
-      x: recent.length > 1 ? (index / (recent.length - 1)) * 100 : 50,
+      x: recent.length > 1 ? 10 + (index / (recent.length - 1)) * 88 : 54,
       y: 88 - ((value - min) / Math.max(max - min, 1e-9)) * 72,
     };
   });
@@ -2270,12 +2304,25 @@ function StockReturnHistory({ periodId }: { periodId: number }) {
     : [];
   const formatValue = (value: number) =>
     mode === "amount" ? cents(value) : percent.format(value);
+  const showZeroLine = keepZeroVisible || (min <= 0 && max >= 0);
+  const yTicks = [max, (max + min) / 2, min].map((value, index) => ({
+    value,
+    y: 16 + index * 36,
+  }));
+  if (
+    showZeroLine &&
+    !yTicks.some((tick) => Math.abs(tick.value) < Math.max(max - min, 1) * 0.015)
+  ) {
+    yTicks.push({ value: 0, y: zeroY });
+    yTicks.sort((left, right) => left.y - right.y);
+  }
+  const title = category === "liberty" ? "Resultado total de Liberty" : "Resultado total de Bolsa";
   return (
     <section className="panel history-panel return-history-panel">
       <div className="panel-heading">
         <div>
           <p className="eyebrow">Rentabilidad histórica</p>
-          <h3>Resultado total de Bolsa</h3>
+          <h3>{title}</h3>
         </div>
         <div className="chart-mode" aria-label="Unidad de la gráfica">
           <button
@@ -2295,10 +2342,20 @@ function StockReturnHistory({ periodId }: { periodId: number }) {
         </div>
       </div>
       <p className="return-formula">
-        Valor de mercado + ventas retiradas + dividendos − compras aportadas.
-        Las reinversiones y retiradas para reinvertir no cuentan como entradas o
-        salidas externas.
+        {category === "liberty"
+          ? "Valor de Liberty menos las aportaciones acumuladas desde mayo de 2015."
+          : "Valor de mercado + ventas retiradas + dividendos − compras aportadas. Las reinversiones y retiradas para reinvertir no cuentan como entradas o salidas externas."}
       </p>
+      {category === "liberty" && (
+        <label className="zero-toggle">
+          <input
+            type="checkbox"
+            checked={keepZeroVisible}
+            onChange={(event) => setKeepZeroVisible(event.target.checked)}
+          />
+          Mantener la cota 0 visible
+        </label>
+      )}
       <div className="chart-zoom">
         <label>
           Zoom temporal
@@ -2328,14 +2385,17 @@ function StockReturnHistory({ periodId }: { periodId: number }) {
         <div className="line-chart return-chart">
           <div className="chart-canvas">
             <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-              <line
-                x1="0"
-                x2="100"
-                y1={zeroY}
-                y2={zeroY}
-                className="zero-line"
-                vectorEffect="non-scaling-stroke"
-              />
+              {yTicks.map((tick, index) => (
+                <line
+                  key={`${tick.y}-${index}`}
+                  x1="10"
+                  x2="98"
+                  y1={tick.y}
+                  y2={tick.y}
+                  className={tick.value === 0 ? "zero-line" : "chart-grid-line"}
+                  vectorEffect="non-scaling-stroke"
+                />
+              ))}
               <polyline
                 points={polyline}
                 fill="none"
@@ -2344,6 +2404,13 @@ function StockReturnHistory({ periodId }: { periodId: number }) {
                 vectorEffect="non-scaling-stroke"
               />
             </svg>
+            <div className="chart-y-axis" aria-hidden="true">
+              {yTicks.map((tick, index) => (
+                <span key={`${tick.y}-${index}`} style={{ top: `${tick.y}%` }}>
+                  {formatValue(tick.value)}
+                </span>
+              ))}
+            </div>
             {coordinates.map((coordinate, index) => (
               <button
                 type="button"
@@ -2370,7 +2437,7 @@ function StockReturnHistory({ periodId }: { periodId: number }) {
               </small>
             </div>
           )}
-          <div className="chart-labels">
+          <div className="chart-labels chart-labels-with-axis">
             {tickIndexes.map((index) => (
               <span key={recent[index].month}>
                 {labelMonth(recent[index].month)}
@@ -2482,6 +2549,7 @@ function Stocks({
   const [dividends, setDividends] = useState<Dividend[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [showDividend, setShowDividend] = useState(false);
+  const [editingMovementId, setEditingMovementId] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
   const [stockSort, setStockSort] = useState<{
     key: StockSortKey;
@@ -2502,7 +2570,6 @@ function Stocks({
     amount: "",
     currency: "EUR",
     fxToEur: "",
-    note: "",
   });
   const loadDetail = useCallback(async () => {
     const [summary, ledger, income] = await Promise.all([
@@ -2586,8 +2653,12 @@ function Stocks({
   };
   const addMovement = async (event: FormEvent) => {
     event.preventDefault();
-    await api("/api/stocks/transactions", {
-      method: "POST",
+    await api(
+      editingMovementId
+        ? `/api/stocks/transactions/${editingMovementId}`
+        : "/api/stocks/transactions",
+      {
+      method: editingMovementId ? "PUT" : "POST",
       body: JSON.stringify({
         tradeDate: movement.tradeDate,
         instrumentId: Number(movement.instrumentId),
@@ -2599,8 +2670,50 @@ function Stocks({
       }),
     });
     setMovement({ ...movement, units: "", price: "" });
+    setEditingMovementId(null);
     setShowForm(false);
     await loadDetail();
+  };
+  const revealForm = (id: string) =>
+    requestAnimationFrame(() =>
+      document.getElementById(id)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      }),
+    );
+  const openNewMovement = () => {
+    setEditingMovementId(null);
+    setMovement({
+      tradeDate: new Date().toISOString().slice(0, 10),
+      instrumentId: "",
+      kind: "A",
+      units: "",
+      price: "",
+      broker: "",
+    });
+    setShowDividend(false);
+    setShowForm(true);
+    revealForm("stock-movement-form");
+  };
+  const editMovement = (item: StockTransaction) => {
+    setEditingMovementId(item.id);
+    setMovement({
+      tradeDate: item.trade_date,
+      instrumentId: String(item.instrument_id),
+      kind: item.kind,
+      units: String(Math.abs(item.units)),
+      price: String(item.price_minor / item.price_scale),
+      broker: item.broker || "",
+    });
+    setShowDividend(false);
+    setShowForm(true);
+    revealForm("stock-movement-form");
+  };
+  const openDividend = () => {
+    setShowForm(false);
+    setEditingMovementId(null);
+    setShowDividend(true);
+    revealForm("stock-dividend-form");
   };
   const addDividend = async (event: FormEvent) => {
     event.preventDefault();
@@ -2617,10 +2730,9 @@ function Stocks({
         fxToEur: dividend.fxToEur
           ? Number(dividend.fxToEur.replace(",", "."))
           : undefined,
-        note: dividend.note || null,
       }),
     });
-    setDividend({ ...dividend, perShare: "", amount: "", note: "" });
+    setDividend({ ...dividend, perShare: "", amount: "" });
     setShowDividend(false);
     await loadDetail();
   };
@@ -2741,13 +2853,13 @@ function Stocks({
           </button>
           <button
             className="button secondary"
-            onClick={() => setShowForm((value) => !value)}
+            onClick={openNewMovement}
           >
             + Movimiento
           </button>
           <button
             className="button secondary"
-            onClick={() => setShowDividend((value) => !value)}
+            onClick={openDividend}
           >
             + Dividendo
           </button>
@@ -2804,10 +2916,14 @@ function Stocks({
       </section>
       <StockBreakdown items={state.items} overview={overview} />
       {showForm && (
-        <form className="panel movement-form" onSubmit={addMovement}>
+        <form
+          id="stock-movement-form"
+          className="panel movement-form"
+          onSubmit={addMovement}
+        >
           <div>
             <p className="eyebrow">Libro de operaciones</p>
-            <h3>Nuevo movimiento</h3>
+            <h3>{editingMovementId ? "Editar movimiento" : "Nuevo movimiento"}</h3>
           </div>
           <label>
             Fecha
@@ -2882,11 +2998,14 @@ function Stocks({
               }
             />
           </label>
-          <button className="button primary">Guardar movimiento</button>
+          <button className="button primary">
+            {editingMovementId ? "Guardar cambios" : "Guardar movimiento"}
+          </button>
         </form>
       )}
       {showDividend && (
         <form
+          id="stock-dividend-form"
           className="panel movement-form dividend-form"
           onSubmit={addDividend}
         >
@@ -2964,15 +3083,6 @@ function Stocks({
               value={dividend.fxToEur}
               onChange={(event) =>
                 setDividend({ ...dividend, fxToEur: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            Nota
-            <input
-              value={dividend.note}
-              onChange={(event) =>
-                setDividend({ ...dividend, note: event.target.value })
               }
             />
           </label>
@@ -3109,7 +3219,7 @@ function Stocks({
           <strong>{euro.format(total)}</strong>
         </div>
       </section>
-      <StockReturnHistory periodId={period.id} />
+      <ReturnHistory category="stocks" periodId={period.id} />
       <section className="panel table-panel ledger-panel">
         <div className="panel-heading">
           <div>
@@ -3145,6 +3255,7 @@ function Stocks({
                 <th className="number">Precio</th>
                 <th className="number">Total</th>
                 <th>Broker</th>
+                <th aria-label="Editar" />
               </tr>
             </thead>
             <tbody>
@@ -3175,6 +3286,17 @@ function Stocks({
                     {cents(item.total_cents)}
                   </td>
                   <td>{item.broker || "—"}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="edit-row-button"
+                      aria-label={`Editar movimiento de ${item.instrument_name}`}
+                      title="Editar movimiento"
+                      onClick={() => editMovement(item)}
+                    >
+                      ✎
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -3200,7 +3322,6 @@ function Stocks({
                 <th className="number">Invertido al pago</th>
                 <th className="number">Rentabilidad</th>
                 <th>Divisa / cambio</th>
-                <th>Nota</th>
               </tr>
             </thead>
             <tbody>
@@ -3242,12 +3363,11 @@ function Stocks({
                         ? ` · ${decimal.format(item.fx_to_eur)}`
                         : ""}
                     </td>
-                    <td>{item.note || "—"}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="empty-table">
+                  <td colSpan={7} className="empty-table">
                     Añade el primer dividendo con el botón superior.
                   </td>
                 </tr>

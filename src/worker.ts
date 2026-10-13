@@ -200,6 +200,41 @@ app.get("/api/stocks/returns-history", async (c) => {
   });
 });
 
+app.get("/api/liberty/returns-history", async (c) => {
+  const requestedPeriodId = Number(c.req.query("periodId"));
+  const selected = Number.isInteger(requestedPeriodId)
+    ? await c.env.DB.prepare("SELECT month FROM periods WHERE id = ?")
+      .bind(requestedPeriodId)
+      .first<{ month: string }>()
+    : null;
+  if (Number.isInteger(requestedPeriodId) && !selected) {
+    return c.json({ error: "Mes no encontrado" }, 404);
+  }
+  const { results } = await c.env.DB.prepare(
+    `SELECT p.month, COALESCE(s.liberty_cents, 0) market_value_cents
+     FROM periods p JOIN summary_snapshots s ON s.period_id = p.id
+     WHERE s.liberty_cents IS NOT NULL AND (? IS NULL OR p.month <= ?)
+     ORDER BY p.month`,
+  ).bind(selected?.month ?? null, selected?.month ?? null).all<Record<string, unknown>>();
+  return c.json({
+    points: results.map((item) => {
+      const contribution = libertyContributions(String(item.month));
+      const marketValue = Number(item.market_value_cents || 0);
+      const result = marketValue - contribution.cumulativeCents;
+      return {
+        ...item,
+        contributed_cents: contribution.cumulativeCents,
+        withdrawn_cents: 0,
+        dividends_cents: 0,
+        result_cents: result,
+        return_rate: contribution.cumulativeCents
+          ? result / contribution.cumulativeCents
+          : null,
+      };
+    }),
+  });
+});
+
 app.get("/api/pension/details", async (c) => {
   const periodId = Number(c.req.query("periodId"));
   const selected = await c.env.DB.prepare("SELECT month FROM periods WHERE id=?").bind(periodId).first<{ month: string }>();
@@ -539,6 +574,28 @@ app.post("/api/stocks/transactions", zValidator("json", transactionSchema), asyn
     totalCents, item.currency, item.broker || null,
   ).first<{ id: number }>();
   return c.json(inserted, 201);
+});
+
+app.put("/api/stocks/transactions/:id", zValidator("json", transactionSchema), async (c) => {
+  const id = Number(c.req.param("id"));
+  const item = c.req.valid("json");
+  const instrument = await c.env.DB.prepare("SELECT id FROM instruments WHERE id = ? AND category = 'stocks'")
+    .bind(item.instrumentId).first();
+  if (!instrument) return c.json({ error: "Activo no encontrado" }, 404);
+  const existing = await c.env.DB.prepare("SELECT id FROM stock_transactions WHERE id = ?")
+    .bind(id).first();
+  if (!existing) return c.json({ error: "Movimiento no encontrado" }, 404);
+  const sign = item.kind === "D" || item.kind === "E" ? -1 : 1;
+  const units = Math.abs(item.units) * sign;
+  const totalCents = Math.round(units * item.price * 100);
+  await c.env.DB.prepare(
+    `UPDATE stock_transactions SET trade_date=?, instrument_id=?, kind=?, units=?, price_minor=?,
+      price_scale=10000, total_cents=?, currency=?, broker=?, source='manual' WHERE id=?`,
+  ).bind(
+    item.tradeDate, item.instrumentId, item.kind, units, Math.round(item.price * 10000),
+    totalCents, item.currency, item.broker || null, id,
+  ).run();
+  return c.json({ ok: true });
 });
 
 app.get("/api/stocks/dividends", async (c) => {
