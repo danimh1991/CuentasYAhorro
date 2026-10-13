@@ -35,6 +35,23 @@ const jsonError = (message: string, status = 400) =>
     headers: { "content-type": "application/json; charset=utf-8" },
   });
 
+function libertyContributions(month: string) {
+  const [year, monthNumber] = month.slice(0, 7).split("-").map(Number);
+  const targetIndex = (year - 2015) * 12 + (monthNumber - 5);
+  if (!Number.isFinite(targetIndex) || targetIndex < 0) {
+    return { monthlyCents: 0, cumulativeCents: 0 };
+  }
+  let cumulativeEuros = 0;
+  for (let index = 0; index <= targetIndex; index += 1) {
+    cumulativeEuros += 50 * 1.03 ** Math.floor(index / 12);
+  }
+  const monthlyEuros = 50 * 1.03 ** Math.floor(targetIndex / 12);
+  return {
+    monthlyCents: Math.round(monthlyEuros * 100),
+    cumulativeCents: Math.round(cumulativeEuros * 100),
+  };
+}
+
 async function hmac(value: string, secret: string) {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -144,6 +161,45 @@ app.get("/api/history/:category", async (c) => {
   return c.json({ points: results });
 });
 
+app.get("/api/stocks/returns-history", async (c) => {
+  const requestedPeriodId = Number(c.req.query("periodId"));
+  const selected = Number.isInteger(requestedPeriodId)
+    ? await c.env.DB.prepare("SELECT month FROM periods WHERE id = ?")
+      .bind(requestedPeriodId)
+      .first<{ month: string }>()
+    : null;
+  if (Number.isInteger(requestedPeriodId) && !selected) {
+    return c.json({ error: "Mes no encontrado" }, 404);
+  }
+  const { results } = await c.env.DB.prepare(
+    `SELECT p.month, COALESCE(s.stocks_cents, 0) market_value_cents,
+      (SELECT COALESCE(SUM(ABS(t.total_cents)), 0) FROM stock_transactions t
+       WHERE t.kind = 'A' AND substr(t.trade_date,1,7) <= substr(p.month,1,7)) contributed_cents,
+      (SELECT COALESCE(SUM(ABS(t.total_cents)), 0) FROM stock_transactions t
+       WHERE t.kind = 'D' AND substr(t.trade_date,1,7) <= substr(p.month,1,7)) withdrawn_cents,
+      (SELECT COALESCE(SUM(d.amount_eur_cents), 0) FROM stock_dividends d
+       WHERE substr(d.payment_date,1,7) <= substr(p.month,1,7)) dividends_cents
+     FROM periods p
+     JOIN summary_snapshots s ON s.period_id = p.id
+     WHERE s.stocks_cents IS NOT NULL AND (? IS NULL OR p.month <= ?)
+     ORDER BY p.month`,
+  ).bind(selected?.month ?? null, selected?.month ?? null).all<Record<string, unknown>>();
+  return c.json({
+    points: results.map((item) => {
+      const marketValue = Number(item.market_value_cents || 0);
+      const contributed = Number(item.contributed_cents || 0);
+      const withdrawn = Number(item.withdrawn_cents || 0);
+      const dividends = Number(item.dividends_cents || 0);
+      const result = marketValue + withdrawn + dividends - contributed;
+      return {
+        ...item,
+        result_cents: result,
+        return_rate: contributed ? result / contributed : null,
+      };
+    }),
+  });
+});
+
 app.get("/api/pension/details", async (c) => {
   const periodId = Number(c.req.query("periodId"));
   const selected = await c.env.DB.prepare("SELECT month FROM periods WHERE id=?").bind(periodId).first<{ month: string }>();
@@ -163,9 +219,33 @@ app.get("/api/pension/details", async (c) => {
 
 app.get("/api/liberty/snapshot", async (c) => {
   const periodId = Number(c.req.query("periodId"));
-  const snapshot = await c.env.DB.prepare(
-    "SELECT contributed_cents, gain_cents, monthly_gain_cents, return_rate FROM liberty_snapshots WHERE period_id = ?",
-  ).bind(periodId).first();
+  const period = await c.env.DB.prepare(
+    `SELECT p.month, COALESCE(s.liberty_cents, 0) liberty_cents
+     FROM periods p LEFT JOIN summary_snapshots s ON s.period_id = p.id WHERE p.id = ?`,
+  ).bind(periodId).first<{ month: string; liberty_cents: number }>();
+  if (!period) return c.json({ error: "Mes no encontrado" }, 404);
+  const previous = await c.env.DB.prepare(
+    `SELECT p.month, COALESCE(s.liberty_cents, 0) liberty_cents
+     FROM periods p LEFT JOIN summary_snapshots s ON s.period_id = p.id
+     WHERE p.month < ? ORDER BY p.month DESC LIMIT 1`,
+  ).bind(period.month).first<{ month: string; liberty_cents: number }>();
+  const contribution = libertyContributions(period.month);
+  const gain = Number(period.liberty_cents || 0) - contribution.cumulativeCents;
+  const previousContribution = previous
+    ? libertyContributions(previous.month).cumulativeCents
+    : 0;
+  const previousGain = previous
+    ? Number(previous.liberty_cents || 0) - previousContribution
+    : 0;
+  const snapshot = {
+    contributed_cents: contribution.cumulativeCents,
+    monthly_contribution_cents: contribution.monthlyCents,
+    gain_cents: gain,
+    monthly_gain_cents: gain - previousGain,
+    return_rate: contribution.cumulativeCents
+      ? gain / contribution.cumulativeCents
+      : null,
+  };
   return c.json({ snapshot });
 });
 
@@ -381,8 +461,8 @@ app.get("/api/stocks/overview", async (c) => {
     `SELECT i.id, i.name, i.isin, i.ticker, i.reference_symbol, i.currency,
       COALESCE(h.units, 0) units, COALESCE(h.market_value_cents, 0) market_value_cents,
       h.price_eur_minor, h.quoted_at, h.is_locked,
-      COALESCE(SUM(CASE WHEN t.total_cents > 0 THEN t.total_cents ELSE 0 END), 0) total_paid_cents,
-      ABS(COALESCE(SUM(CASE WHEN t.total_cents < 0 THEN t.total_cents ELSE 0 END), 0)) total_withdrawn_cents,
+      COALESCE(SUM(CASE WHEN t.kind = 'A' THEN ABS(t.total_cents) ELSE 0 END), 0) total_paid_cents,
+      COALESCE(SUM(CASE WHEN t.kind = 'D' THEN ABS(t.total_cents) ELSE 0 END), 0) total_withdrawn_cents,
       COALESCE(SUM(t.total_cents), 0) net_invested_cents,
       (SELECT COALESCE(SUM(d.amount_eur_cents), 0) FROM stock_dividends d
        WHERE d.instrument_id=i.id AND substr(d.payment_date,1,7) <= substr(selected.month,1,7)) total_dividends_cents

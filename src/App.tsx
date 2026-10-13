@@ -73,6 +73,15 @@ type HistoryPoint = {
   value_cents: number;
   contributions_cents?: number;
 };
+type StockReturnPoint = {
+  month: string;
+  market_value_cents: number;
+  contributed_cents: number;
+  withdrawn_cents: number;
+  dividends_cents: number;
+  result_cents: number;
+  return_rate: number | null;
+};
 type StockOverview = Instrument & {
   total_paid_cents: number;
   total_withdrawn_cents: number;
@@ -1232,6 +1241,7 @@ function Liberty({
   const [fundValues, setFundValues] = useState<Record<number, string>>({});
   const [snapshot, setSnapshot] = useState<{
     contributed_cents: number;
+    monthly_contribution_cents: number;
     gain_cents: number;
     monthly_gain_cents: number;
     return_rate: number | null;
@@ -1350,11 +1360,14 @@ function Liberty({
         </div>
       )}
       <section className="metric-grid liberty-metrics">
-        <Metric
-          label="Aportado"
-          value={snapshot?.contributed_cents ?? 0}
-          tone="blue"
-        />
+        <div className="metric blue">
+          <span>Aportado</span>
+          <strong>{cents(snapshot?.contributed_cents ?? 0)}</strong>
+          <small>
+            Cuota del mes {cents(snapshot?.monthly_contribution_cents ?? 0)} ·
+            sube un 3 % cada mayo
+          </small>
+        </div>
         <Metric
           label="Ganancia acumulada"
           value={snapshot?.gain_cents ?? 0}
@@ -2215,6 +2228,161 @@ function HistoryPanel({
   );
 }
 
+function StockReturnHistory({ periodId }: { periodId: number }) {
+  const [points, setPoints] = useState<StockReturnPoint[]>([]);
+  const [mode, setMode] = useState<"amount" | "percent">("amount");
+  const [zoomMonths, setZoomMonths] = useState(24);
+  const [hovered, setHovered] = useState<number | null>(null);
+  useEffect(() => {
+    api<{ points: StockReturnPoint[] }>(
+      `/api/stocks/returns-history?periodId=${periodId}`,
+    ).then((data) => {
+      const active = data.points.filter((point) => point.contributed_cents > 0);
+      setPoints(active);
+      setZoomMonths((current) =>
+        Math.min(active.length || 1, Math.max(6, current)),
+      );
+      setHovered(null);
+    });
+  }, [periodId]);
+  const visibleCount = Math.min(zoomMonths, points.length);
+  const recent = points.slice(-visibleCount);
+  const values = recent.map((point) =>
+    mode === "amount" ? point.result_cents : (point.return_rate ?? 0),
+  );
+  const rawMin = Math.min(...values, 0);
+  const rawMax = Math.max(...values, 0);
+  const padding = Math.max((rawMax - rawMin) * 0.12, mode === "amount" ? 100 : 0.01);
+  const min = rawMin - padding;
+  const max = rawMax + padding;
+  const coordinates = recent.map((point, index) => {
+    const value = mode === "amount" ? point.result_cents : (point.return_rate ?? 0);
+    return {
+      value,
+      x: recent.length > 1 ? (index / (recent.length - 1)) * 100 : 50,
+      y: 88 - ((value - min) / Math.max(max - min, 1e-9)) * 72,
+    };
+  });
+  const polyline = coordinates.map((point) => `${point.x},${point.y}`).join(" ");
+  const zeroY = 88 - ((0 - min) / Math.max(max - min, 1e-9)) * 72;
+  const tickIndexes = recent.length
+    ? [...new Set([0, Math.floor((recent.length - 1) / 2), recent.length - 1])]
+    : [];
+  const formatValue = (value: number) =>
+    mode === "amount" ? cents(value) : percent.format(value);
+  return (
+    <section className="panel history-panel return-history-panel">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Rentabilidad histórica</p>
+          <h3>Resultado total de Bolsa</h3>
+        </div>
+        <div className="chart-mode" aria-label="Unidad de la gráfica">
+          <button
+            type="button"
+            className={mode === "amount" ? "active" : ""}
+            onClick={() => setMode("amount")}
+          >
+            Valor absoluto
+          </button>
+          <button
+            type="button"
+            className={mode === "percent" ? "active" : ""}
+            onClick={() => setMode("percent")}
+          >
+            Porcentaje
+          </button>
+        </div>
+      </div>
+      <p className="return-formula">
+        Valor de mercado + ventas retiradas + dividendos − compras aportadas.
+        Las reinversiones y retiradas para reinvertir no cuentan como entradas o
+        salidas externas.
+      </p>
+      <div className="chart-zoom">
+        <label>
+          Zoom temporal
+          <input
+            type="range"
+            min={Math.min(6, Math.max(points.length, 1))}
+            max={Math.max(points.length, 1)}
+            value={Math.max(1, visibleCount)}
+            disabled={points.length < 2}
+            onChange={(event) => setZoomMonths(Number(event.target.value))}
+          />
+        </label>
+        <button
+          type="button"
+          className="button secondary compact"
+          disabled={!points.length}
+          onClick={() => setZoomMonths(points.length)}
+        >
+          Ver todo
+        </button>
+      </div>
+      {recent.length < 2 ? (
+        <div className="chart-empty">
+          La gráfica aparecerá cuando haya al menos dos cierres con aportaciones.
+        </div>
+      ) : (
+        <div className="line-chart return-chart">
+          <div className="chart-canvas">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+              <line
+                x1="0"
+                x2="100"
+                y1={zeroY}
+                y2={zeroY}
+                className="zero-line"
+                vectorEffect="non-scaling-stroke"
+              />
+              <polyline
+                points={polyline}
+                fill="none"
+                stroke="#6f61b5"
+                strokeWidth="2.2"
+                vectorEffect="non-scaling-stroke"
+              />
+            </svg>
+            {coordinates.map((coordinate, index) => (
+              <button
+                type="button"
+                key={`${recent[index].month}-${mode}`}
+                className={`chart-point return-point ${coordinate.value < 0 ? "negative-point" : ""} ${hovered === index ? "active" : ""}`}
+                style={{ left: `${coordinate.x}%`, top: `${coordinate.y}%` }}
+                aria-label={`${labelMonth(recent[index].month)} · ${formatValue(coordinate.value)}`}
+                onMouseEnter={() => setHovered(index)}
+                onMouseLeave={() => setHovered(null)}
+                onFocus={() => setHovered(index)}
+                onBlur={() => setHovered(null)}
+              />
+            ))}
+          </div>
+          {hovered !== null && (
+            <div
+              className="chart-tooltip"
+              style={{ left: `${coordinates[hovered].x}%` }}
+            >
+              <strong>{labelMonth(recent[hovered].month)}</strong>
+              <span>{formatValue(coordinates[hovered].value)}</span>
+              <small>
+                Aportado {cents(recent[hovered].contributed_cents)}
+              </small>
+            </div>
+          )}
+          <div className="chart-labels">
+            {tickIndexes.map((index) => (
+              <span key={recent[index].month}>
+                {labelMonth(recent[index].month)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function StockBreakdown({
   items,
   overview,
@@ -2457,7 +2625,7 @@ function Stocks({
     await loadDetail();
   };
   const byId = new Map(overview.map((item) => [item.id, item]));
-  const paidTotal = overview.reduce(
+  const contributedTotal = overview.reduce(
     (sum, item) => sum + Number(item.total_paid_cents || 0),
     0,
   );
@@ -2470,9 +2638,13 @@ function Stocks({
     0,
   );
   const resultTotal =
-    Math.round(total * 100) - paidTotal + withdrawnTotal + dividendTotal;
-  const totalReturn = paidTotal ? resultTotal / Math.abs(paidTotal) : null;
-  const dividendReturn = paidTotal ? dividendTotal / Math.abs(paidTotal) : null;
+    Math.round(total * 100) - contributedTotal + withdrawnTotal + dividendTotal;
+  const totalReturn = contributedTotal
+    ? resultTotal / Math.abs(contributedTotal)
+    : null;
+  const dividendReturn = contributedTotal
+    ? dividendTotal / Math.abs(contributedTotal)
+    : null;
   const missing = Object.values(state.previews).filter((item) => item.error);
   const stockRows = state.items
     .map((item, index) => {
@@ -2507,7 +2679,9 @@ function Stocks({
         withdrawn: Number(info?.total_withdrawn_cents || 0),
         dividends: Number(info?.total_dividends_cents || 0),
         result,
-        variation: net ? result / Math.abs(net) : 0,
+        variation: Number(info?.total_paid_cents || 0)
+          ? result / Math.abs(Number(info?.total_paid_cents || 0))
+          : 0,
         status,
       };
       return { item, index, info, livePrice, price, value, result, net, sortValues };
@@ -2607,7 +2781,7 @@ function Stocks({
           value={Math.round(total * 100)}
           tone="green"
         />
-        <Metric label="Total pagado" value={paidTotal} tone="blue" />
+        <Metric label="Total aportado" value={contributedTotal} tone="blue" />
         <Metric label="Total retirado" value={withdrawnTotal} tone="gold" />
         <Metric label="Dividendos" value={dividendTotal} tone="violet" />
         <Metric
@@ -2618,14 +2792,14 @@ function Stocks({
         <div className="metric violet">
           <span>Rentabilidad total</span>
           <strong>{totalReturn == null ? "—" : percent.format(totalReturn)}</strong>
-          <small>Incluye dividendos</small>
+          <small>R, E excluidas · incluye dividendos</small>
         </div>
         <div className="metric gold">
           <span>Rentabilidad dividendos</span>
           <strong>
             {dividendReturn == null ? "—" : percent.format(dividendReturn)}
           </strong>
-          <small>Dividendos / total pagado</small>
+          <small>Dividendos / total aportado</small>
         </div>
       </section>
       <StockBreakdown items={state.items} overview={overview} />
@@ -2824,7 +2998,7 @@ function Stocks({
                 {sortableHeader("Valor posición", "value", true)}
                 {sortableHeader("Peso cartera", "weight", true)}
                 {sortableHeader("Invertido neto", "net", true)}
-                {sortableHeader("Pagado", "paid", true)}
+                {sortableHeader("Aportado", "paid", true)}
                 {sortableHeader("Retirado", "withdrawn", true)}
                 {sortableHeader("Dividendos", "dividends", true)}
                 {sortableHeader("Resultado", "result", true)}
@@ -2910,7 +3084,11 @@ function Stocks({
                     <td
                       className={`number ${result >= 0 ? "positive" : "negative"}`}
                     >
-                      {net ? percent.format(result / Math.abs(net)) : "—"}
+                      {info?.total_paid_cents
+                        ? percent.format(
+                            result / Math.abs(info.total_paid_cents),
+                          )
+                        : "—"}
                     </td>
                     <td>
                       <QuoteStatus
@@ -2931,6 +3109,7 @@ function Stocks({
           <strong>{euro.format(total)}</strong>
         </div>
       </section>
+      <StockReturnHistory periodId={period.id} />
       <section className="panel table-panel ledger-panel">
         <div className="panel-heading">
           <div>
