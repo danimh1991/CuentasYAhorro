@@ -74,7 +74,20 @@ main {
 
 .chart-zoom input { flex: 1; accent-color: #218b6d; }
 .button.compact { padding: 7px 11px; font-size: 11px; }
-.chart-point { fill: #fff; stroke: #218b6d; stroke-width: 1.5px; cursor: crosshair; }
+.chart-canvas { position: relative; height: 150px; }
+.chart-canvas svg { position: absolute; inset: 0; height: 100%; }
+.chart-point {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 2px solid #218b6d;
+  border-radius: 50%;
+  background: #fff;
+  transform: translate(-50%, -50%);
+  cursor: crosshair;
+}
+.chart-point.active { width: 14px; height: 14px; background: #dff5ec; }
 .chart-tooltip {
   position: absolute;
   z-index: 3;
@@ -284,6 +297,25 @@ main {
 .pension-metrics { grid-template-columns: repeat(4, 1fr); }
 .pension-history-table { margin-bottom: 18px; }
 .pension-history-table table { min-width: 1050px; }
+.summary-note { min-width: 260px; max-width: 420px; white-space: normal; color: #68756e; }
+.sort-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+th:not(.number) .sort-button { justify-content: flex-start; }
+.sort-button span { color: #a5afa9; font-size: 12px; }
+.sort-button.active { color: #207d63; }
 
 .savings-history {
   margin-bottom: 18px;

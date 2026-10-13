@@ -97,6 +97,20 @@ type StockTransaction = {
   instrument_id: number;
   instrument_name: string;
 };
+type StockSortKey =
+  | "name"
+  | "symbol"
+  | "price"
+  | "units"
+  | "value"
+  | "weight"
+  | "net"
+  | "paid"
+  | "withdrawn"
+  | "dividends"
+  | "result"
+  | "variation"
+  | "status";
 type SavingsEntry = {
   period_id: number;
   month: string;
@@ -523,7 +537,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 const columns = [
   ["Cuenta corriente", "current_account_cents"],
   ["Cuenta ahorro", "savings_account_cents"],
-  ["PIAS", "pias_cents"],
+  ["Ahorro", "pias_cents"],
   ["Liberty", "liberty_cents"],
   ["Fondo pensiones", "pension_cents"],
   ["Bolsa", "stocks_cents"],
@@ -549,6 +563,7 @@ function Overview({ periods }: { periods: Period[] }) {
                   {label}
                 </th>
               ))}
+              <th>Nota</th>
             </tr>
           </thead>
           <tbody>
@@ -565,6 +580,7 @@ function Overview({ periods }: { periods: Period[] }) {
                     {cents(period[key])}
                   </td>
                 ))}
+                <td className="summary-note">{period.notes || "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -724,7 +740,7 @@ function Summary({
           tone="blue"
         />
         <EditableMetric
-          label="PIAS"
+          label="Ahorro"
           value={form.pias}
           onChange={(value) => setForm({ ...form, pias: value })}
           tone="gold"
@@ -884,6 +900,7 @@ function LineChart({
   const tickIndexes = [...new Set([0, Math.floor((recent.length - 1) / 2), recent.length - 1])];
   return (
     <div className="line-chart">
+      <div className="chart-canvas">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none">
         <defs>
           <linearGradient
@@ -918,21 +935,21 @@ function LineChart({
             vectorEffect="non-scaling-stroke"
           />
         )}
-        {mainCoordinates.map((coordinate, index) => (
-          <circle
-            key={`${recent[index].month}-${index}`}
-            cx={coordinate.x}
-            cy={coordinate.y}
-            r={hovered === index ? 2.2 : 1.1}
-            className="chart-point"
-            vectorEffect="non-scaling-stroke"
-            onMouseEnter={() => setHovered(index)}
-            onMouseLeave={() => setHovered(null)}
-          >
-            <title>{`${labelMonth(recent[index].month)} · ${cents(recent[index].value_cents)}`}</title>
-          </circle>
-        ))}
       </svg>
+      {mainCoordinates.map((coordinate, index) => (
+        <button
+          type="button"
+          key={`${recent[index].month}-${index}`}
+          className={`chart-point ${hovered === index ? "active" : ""}`}
+          style={{ left: `${coordinate.x}%`, top: `${coordinate.y}%` }}
+          aria-label={`${labelMonth(recent[index].month)} · ${cents(recent[index].value_cents)}`}
+          onMouseEnter={() => setHovered(index)}
+          onMouseLeave={() => setHovered(null)}
+          onFocus={() => setHovered(index)}
+          onBlur={() => setHovered(null)}
+        />
+      ))}
+      </div>
       {hovered !== null && (
         <div
           className="chart-tooltip"
@@ -2298,6 +2315,10 @@ function Stocks({
   const [showForm, setShowForm] = useState(false);
   const [showDividend, setShowDividend] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [stockSort, setStockSort] = useState<{
+    key: StockSortKey;
+    direction: "asc" | "desc";
+  }>({ key: "value", direction: "desc" });
   const [movement, setMovement] = useState({
     tradeDate: new Date().toISOString().slice(0, 10),
     instrumentId: "",
@@ -2453,6 +2474,81 @@ function Stocks({
   const totalReturn = paidTotal ? resultTotal / Math.abs(paidTotal) : null;
   const dividendReturn = paidTotal ? dividendTotal / Math.abs(paidTotal) : null;
   const missing = Object.values(state.previews).filter((item) => item.error);
+  const stockRows = state.items
+    .map((item, index) => {
+      const info = byId.get(item.id);
+      const livePrice = state.previews[item.id]?.quote?.priceEur;
+      const price = priceForStock(item);
+      const value = Number(item.units || 0) * price;
+      const result =
+        value * 100 -
+        Number(info?.total_paid_cents || 0) +
+        Number(info?.total_withdrawn_cents || 0) +
+        Number(info?.total_dividends_cents || 0);
+      const net = Number(info?.net_invested_cents || 0);
+      const status = state.previews[item.id]?.quote
+        ? "En vivo"
+        : state.previews[item.id]?.error
+          ? "Revisar"
+          : state.manual[item.id]
+            ? "Manual"
+            : item.quoted_at
+              ? "Guardado"
+              : "Pendiente";
+      const sortValues: Record<StockSortKey, string | number> = {
+        name: item.name,
+        symbol: item.reference_symbol || item.ticker || "",
+        price,
+        units: Number(item.units || 0),
+        value,
+        weight: total ? value / total : 0,
+        net,
+        paid: Number(info?.total_paid_cents || 0),
+        withdrawn: Number(info?.total_withdrawn_cents || 0),
+        dividends: Number(info?.total_dividends_cents || 0),
+        result,
+        variation: net ? result / Math.abs(net) : 0,
+        status,
+      };
+      return { item, index, info, livePrice, price, value, result, net, sortValues };
+    })
+    .sort((left, right) => {
+      const a = left.sortValues[stockSort.key];
+      const b = right.sortValues[stockSort.key];
+      const compared =
+        typeof a === "string" && typeof b === "string"
+          ? a.localeCompare(b, "es", { sensitivity: "base" })
+          : Number(a) - Number(b);
+      return stockSort.direction === "asc" ? compared : -compared;
+    });
+  const changeStockSort = (key: StockSortKey) =>
+    setStockSort((current) => ({
+      key,
+      direction:
+        current.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
+  const sortableHeader = (
+    label: string,
+    key: StockSortKey,
+    numeric = false,
+  ) => (
+    <th className={numeric ? "number" : undefined}>
+      <button
+        type="button"
+        className={`sort-button ${stockSort.key === key ? "active" : ""}`}
+        onClick={() => changeStockSort(key)}
+      >
+        {label}
+        <span aria-hidden="true">
+          {stockSort.key === key
+            ? stockSort.direction === "asc"
+              ? "↑"
+              : "↓"
+            : "↕"}
+        </span>
+      </button>
+    </th>
+  );
   return (
     <>
       <section className="detail-hero">
@@ -2721,34 +2817,24 @@ function Stocks({
           <table>
             <thead>
               <tr>
-                <th>Activo</th>
-                <th>Símbolo</th>
-                <th className="number">Precio unitario</th>
-                <th className="number">Unidades</th>
-                <th className="number">Valor posición</th>
-                <th className="number">Peso cartera</th>
-                <th className="number">Invertido neto</th>
-                <th className="number">Pagado</th>
-                <th className="number">Retirado</th>
-                <th className="number">Dividendos</th>
-                <th className="number">Resultado</th>
-                <th className="number">Variación</th>
-                <th>Estado</th>
+                {sortableHeader("Activo", "name")}
+                {sortableHeader("Símbolo", "symbol")}
+                {sortableHeader("Precio unitario", "price", true)}
+                {sortableHeader("Unidades", "units", true)}
+                {sortableHeader("Valor posición", "value", true)}
+                {sortableHeader("Peso cartera", "weight", true)}
+                {sortableHeader("Invertido neto", "net", true)}
+                {sortableHeader("Pagado", "paid", true)}
+                {sortableHeader("Retirado", "withdrawn", true)}
+                {sortableHeader("Dividendos", "dividends", true)}
+                {sortableHeader("Resultado", "result", true)}
+                {sortableHeader("Variación", "variation", true)}
+                {sortableHeader("Estado", "status")}
               </tr>
             </thead>
             <tbody>
-              {state.items.map((item, index) => {
-                const info = byId.get(item.id);
-                const quote = quoteFor(item, state.previews, state.manual);
-                const livePrice = state.previews[item.id]?.quote?.priceEur;
-                const price = priceForStock(item);
-                const value = Number(item.units || 0) * price;
-                const result =
-                  value * 100 -
-                  Number(info?.total_paid_cents || 0) +
-                  Number(info?.total_withdrawn_cents || 0) +
-                  Number(info?.total_dividends_cents || 0);
-                const net = Number(info?.net_invested_cents || 0);
+              {stockRows.map(
+                ({ item, index, info, livePrice, price, value, result, net }) => {
                 return (
                   <tr
                     key={item.id}
@@ -2835,7 +2921,8 @@ function Stocks({
                     </td>
                   </tr>
                 );
-              })}
+                },
+              )}
             </tbody>
           </table>
         </div>
