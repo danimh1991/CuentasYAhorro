@@ -43,5 +43,6 @@ pnpm exec wrangler d1 execute cuentas-y-ahorro --local --file .local\excel_impor
 
 El proyecto usa Cloudflare Workers Builds conectado a la rama `main` de GitHub. `wrangler deploy` ejecuta primero `pnpm run build` mediante la sección `[build]` de `wrangler.toml`. Cada push a `main` crea un nuevo despliegue de producción.
 
-Los secretos `APP_PASSWORD` y `AUTH_SECRET` se configuran en Cloudflare y no forman parte del repositorio.
+Ruta de producción: `https://danieta.com/cuentasyahorro/`.
 
+Los secretos `APP_PASSWORD` y `AUTH_SECRET` se configuran en Cloudflare y no forman parte del repositorio.
