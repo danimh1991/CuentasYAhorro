@@ -1,0 +1,31 @@
+{
+  "name": "cuentas-y-ahorro",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "check": "tsc --noEmit",
+    "dev": "wrangler dev",
+    "deploy": "pnpm run check && wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply cuentas-y-ahorro --local",
+    "db:migrate:remote": "wrangler d1 migrations apply cuentas-y-ahorro --remote"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.7.2",
+    "hono": "^4.9.7",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261013.1",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5",
+    "wrangler": "^4.37.1"
+  },
+  "packageManager": "pnpm@11.25.0"
+}

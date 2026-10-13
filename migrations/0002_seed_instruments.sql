@@ -1,0 +1,17 @@
+INSERT OR IGNORE INTO instruments (category, name, sort_order) VALUES
+  ('liberty', 'CARMIGNAC PATRIMOINE', 10),
+  ('liberty', 'C-QUADRAT ARTS TOTAL RETURN DYNAMIC', 20),
+  ('liberty', 'DWS Top Dividende', 30),
+  ('liberty', 'Liberty European Stock Market', 40),
+  ('liberty', 'Threadneedle European Select Fund 1E', 50),
+  ('pension', 'Fondo de pensiones HPE', 10),
+  ('stocks', 'Santander', 10),
+  ('stocks', 'IAG', 20),
+  ('stocks', 'SP500', 30),
+  ('stocks', 'Netflix', 40),
+  ('stocks', 'Inditex', 50),
+  ('stocks', 'Telefónica', 60),
+  ('stocks', 'HPE', 70),
+  ('stocks', 'ROVI', 80),
+  ('stocks', 'Rare Earth', 90),
+  ('stocks', 'Defense', 100);
