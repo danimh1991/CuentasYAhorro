@@ -55,6 +55,44 @@ main {
   color: #7f8b85;
 }
 
+.chart-zoom {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: -5px 0 14px;
+}
+
+.chart-zoom label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  color: #69766f;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.chart-zoom input { flex: 1; accent-color: #218b6d; }
+.button.compact { padding: 7px 11px; font-size: 11px; }
+.chart-point { fill: #fff; stroke: #218b6d; stroke-width: 1.5px; cursor: crosshair; }
+.chart-tooltip {
+  position: absolute;
+  z-index: 3;
+  top: 2px;
+  display: flex;
+  flex-direction: column;
+  min-width: 118px;
+  padding: 8px 10px;
+  border: 1px solid #dbe4df;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 7px 20px #1b30271f;
+  transform: translateX(-50%);
+  pointer-events: none;
+  font-size: 11px;
+}
+.chart-tooltip span { color: #218b6d; font-weight: 700; }
+
 .movement-form {
   display: grid;
   grid-template-columns: 1.25fr repeat(5, minmax(120px, 1fr)) auto;
@@ -232,6 +270,21 @@ main {
   text-align: right;
 }
 
+.fund-value-field { width: 118px; }
+
+.savings-config-modal .config-section { margin-top: 24px; }
+.savings-config-modal .config-section h3 { margin: 0 0 12px; font: 700 16px Manrope; }
+.settings-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.settings-grid label { color: #68756e; font-size: 11px; font-weight: 700; }
+.settings-grid input,
+.savings-config-modal td input,
+.fund-add-row input { width: 100%; padding: 9px; margin-top: 5px; }
+.savings-config-modal table { min-width: 760px; }
+.fund-add-row { display: grid; grid-template-columns: 2fr 1.4fr 1fr auto; gap: 10px; align-items: end; margin-top: 14px; }
+.pension-metrics { grid-template-columns: repeat(4, 1fr); }
+.pension-history-table { margin-bottom: 18px; }
+.pension-history-table table { min-width: 1050px; }
+
 .savings-history {
   margin-bottom: 18px;
 }
@@ -343,11 +396,13 @@ main {
 
   .liberty-metrics,
   .stock-kpis,
+  .pension-metrics,
   .savings-editor {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .market-add {
+  .market-add,
+  .fund-add-row {
     grid-template-columns: repeat(3, 1fr);
   }
 }
@@ -372,9 +427,12 @@ main {
 
   .liberty-metrics,
   .stock-kpis,
+  .pension-metrics,
   .savings-editor,
   .market-grid,
-  .market-add {
+  .market-add,
+  .fund-add-row,
+  .settings-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -60,6 +60,14 @@ type PensionEntry = {
   current_value_cents: number;
   cumulative_contributions_cents: number;
 };
+type PensionHistory = PensionEntry & {
+  period_id: number;
+  month: string;
+  cumulative_employer_cents: number;
+  cumulative_personal_cents: number;
+  gain_cents: number;
+  month_change_cents: number;
+};
 type HistoryPoint = {
   month: string;
   value_cents: number;
@@ -72,6 +80,7 @@ type StockOverview = Instrument & {
   net_invested_cents: number;
   result_cents: number;
   variation: number | null;
+  dividend_return: number | null;
   equilibrium_price: number | null;
 };
 type StockTransaction = {
@@ -109,6 +118,17 @@ type SavingsFundTransaction = {
   price_scale: number;
   source: string;
 };
+type SavingsSetting = {
+  bucket: SavingsEntry["bucket"];
+  label: string;
+};
+type SavingsFund = {
+  id: number;
+  name: string;
+  isin?: string | null;
+  ticker?: string | null;
+  currency: string;
+};
 type Dividend = {
   id: number;
   payment_date: string;
@@ -119,6 +139,9 @@ type Dividend = {
   currency: string;
   fx_to_eur: number;
   amount_eur_cents: number;
+  per_share_minor?: number | null;
+  per_share_scale?: number | null;
+  invested_at_payment_cents?: number | null;
   note?: string | null;
 };
 type MarketReference = {
@@ -636,6 +659,7 @@ function Summary({
     notes: period.notes || "",
   });
   const [saving, setSaving] = useState(false);
+  const [zoomMonths, setZoomMonths] = useState(Math.min(24, periods.length));
   useEffect(
     () =>
       setForm({
@@ -720,11 +744,33 @@ function Summary({
               <p className="eyebrow">Evolución</p>
               <h3>Patrimonio total</h3>
             </div>
-            <span>Últimos 24 meses</span>
+            <span>
+              {zoomMonths >= periods.length
+                ? `Todo el histórico · ${periods.length} meses`
+                : `Últimos ${zoomMonths} meses`}
+            </span>
+          </div>
+          <div className="chart-zoom">
+            <label>
+              Zoom temporal
+              <input
+                type="range"
+                min={Math.min(6, periods.length)}
+                max={Math.max(periods.length, 6)}
+                value={zoomMonths}
+                onChange={(event) => setZoomMonths(Number(event.target.value))}
+              />
+            </label>
+            <button
+              className="button secondary compact"
+              onClick={() => setZoomMonths(periods.length)}
+            >
+              Ver todo
+            </button>
           </div>
           <LineChart
             points={periods
-              .slice(-24)
+              .slice(-zoomMonths)
               .map((item) => ({
                 month: item.month,
                 value_cents: item.total_cents ?? 0,
@@ -808,27 +854,34 @@ function LineChart({
   points: HistoryPoint[];
   secondKey?: "contributions_cents";
 }) {
+  const [hovered, setHovered] = useState<number | null>(null);
   if (points.length < 2)
     return (
       <div className="chart-empty">
         La gráfica aparecerá al guardar varios meses.
       </div>
     );
-  const recent = points.slice(-36);
+  const recent = points;
   const values = recent.flatMap((point) => [
     point.value_cents ?? 0,
     secondKey ? (point[secondKey] ?? 0) : (point.value_cents ?? 0),
   ]);
   const min = Math.min(...values) * 0.96;
   const max = Math.max(...values) * 1.04;
+  const coordinates = (key: "value_cents" | "contributions_cents") =>
+    recent.map((point, index) => ({
+      x: (index / (recent.length - 1)) * 100,
+      y:
+        88 -
+        (((point[key] ?? 0) - min) / Math.max(max - min, 1)) * 72,
+    }));
   const makePoints = (key: "value_cents" | "contributions_cents") =>
-    recent
-      .map(
-        (point, index) =>
-          `${(index / (recent.length - 1)) * 100},${88 - (((point[key] ?? 0) - min) / Math.max(max - min, 1)) * 72}`,
-      )
+    coordinates(key)
+      .map((point) => `${point.x},${point.y}`)
       .join(" ");
   const main = makePoints("value_cents");
+  const mainCoordinates = coordinates("value_cents");
+  const tickIndexes = [...new Set([0, Math.floor((recent.length - 1) / 2), recent.length - 1])];
   return (
     <div className="line-chart">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -865,13 +918,37 @@ function LineChart({
             vectorEffect="non-scaling-stroke"
           />
         )}
+        {mainCoordinates.map((coordinate, index) => (
+          <circle
+            key={`${recent[index].month}-${index}`}
+            cx={coordinate.x}
+            cy={coordinate.y}
+            r={hovered === index ? 2.2 : 1.1}
+            className="chart-point"
+            vectorEffect="non-scaling-stroke"
+            onMouseEnter={() => setHovered(index)}
+            onMouseLeave={() => setHovered(null)}
+          >
+            <title>{`${labelMonth(recent[index].month)} · ${cents(recent[index].value_cents)}`}</title>
+          </circle>
+        ))}
       </svg>
+      {hovered !== null && (
+        <div
+          className="chart-tooltip"
+          style={{ left: `${mainCoordinates[hovered].x}%` }}
+        >
+          <strong>{labelMonth(recent[hovered].month)}</strong>
+          <span>{cents(recent[hovered].value_cents)}</span>
+        </div>
+      )}
       <div className="chart-labels">
-        <span>{labelMonth(recent[0].month)}</span>
+        {tickIndexes.map((index) => (
+          <span key={recent[index].month}>{labelMonth(recent[index].month)}</span>
+        ))}
         {secondKey && (
           <span className="chart-legend">— Valor ··· Aportaciones</span>
         )}
-        <span>{labelMonth(recent.at(-1)!.month)}</span>
       </div>
     </div>
   );
@@ -908,6 +985,12 @@ function usePortfolio(category: "liberty" | "stocks", periodId: number) {
         Object.fromEntries(
           data.quotes.map((quote) => [quote.instrumentId, quote]),
         ),
+      );
+      const failed = data.quotes.filter((quote) => quote.error).length;
+      setMessage(
+        failed
+          ? `Cotizaciones consultadas. No se encontraron ${failed}; puedes introducirlas manualmente.`
+          : "Cotizaciones actualizadas.",
       );
     } catch (cause) {
       setMessage(
@@ -1129,18 +1212,34 @@ function Liberty({
 }) {
   const state = usePortfolio("liberty", period.id);
   const [editing, setEditing] = useState(false);
+  const [fundValues, setFundValues] = useState<Record<number, string>>({});
   const [snapshot, setSnapshot] = useState<{
     contributed_cents: number;
     gain_cents: number;
     monthly_gain_cents: number;
     return_rate: number | null;
   } | null>(null);
+  useEffect(() => setFundValues({}), [period.id]);
+  const unitPrice = (item: Instrument) =>
+    quoteFor(item, state.previews, state.manual)?.priceEur ??
+    (item.price_eur_minor ?? 0) / 10000;
+  const hasValueOverride = (id: number) =>
+    Object.prototype.hasOwnProperty.call(fundValues, id);
+  const enteredFundValue = (item: Instrument) =>
+    Number((fundValues[item.id] || "").replace(",", ".")) || 0;
+  const effectiveUnits = (item: Instrument) => {
+    const price = unitPrice(item);
+    return hasValueOverride(item.id) && enteredFundValue(item) > 0 && price > 0
+      ? enteredFundValue(item) / price
+      : Number(item.units || 0);
+  };
+  const effectiveFundValue = (item: Instrument) => {
+    if (hasValueOverride(item.id)) return enteredFundValue(item);
+    const calculated = Number(item.units || 0) * unitPrice(item);
+    return calculated || (item.market_value_cents ?? 0) / 100;
+  };
   const total = state.items.reduce(
-    (sum, item) =>
-      sum +
-      Number(item.units || 0) *
-        (quoteFor(item, state.previews, state.manual)?.priceEur ??
-          (item.price_eur_minor ?? 0) / 10000),
+    (sum, item) => sum + effectiveFundValue(item),
     0,
   );
   useEffect(() => {
@@ -1149,15 +1248,20 @@ function Liberty({
     ).then((data) => setSnapshot(data.snapshot));
   }, [period.id]);
   const save = async () => {
-    const quoted = state.items
+    const positions = state.items.filter(
+      (item) =>
+        Math.abs(effectiveUnits(item)) > 0.00000001 ||
+        effectiveFundValue(item) > 0,
+    );
+    const quoted = positions
       .map((item) => ({
         item,
         quote: quoteFor(item, state.previews, state.manual),
       }))
       .filter((row) => row.quote);
-    if (!quoted.length)
+    if (quoted.length !== positions.length)
       return state.setMessage(
-        "Consulta cotizaciones o introduce un valor manual.",
+        "Antes de guardar debes consultar o introducir manualmente el precio unitario de todos los fondos con unidades.",
       );
     state.setBusy(true);
     state.setMessage("");
@@ -1168,7 +1272,7 @@ function Liberty({
           category: "liberty",
           items: quoted.map(({ item, quote }) => ({
             instrumentId: item.id,
-            units: Number(item.units || 0),
+            units: effectiveUnits(item),
             averageCostCents: item.average_cost_cents ?? null,
             investedCents: item.invested_cents ?? null,
             withdrawnCents: item.withdrawn_cents ?? 0,
@@ -1260,7 +1364,10 @@ function Liberty({
             <p className="eyebrow">Posiciones</p>
             <h3>Fondos Liberty</h3>
           </div>
-          <span>Unidades y símbolos se copian al crear el mes siguiente</span>
+          <span>
+            Escribe unidades o valor total; con el precio unitario se calcula el
+            otro dato. Consulta precios antes de guardar un mes nuevo.
+          </span>
         </div>
         <div className="table-scroll">
           <table>
@@ -1269,18 +1376,18 @@ function Liberty({
                 <th>Fondo</th>
                 <th>ISIN / símbolo</th>
                 <th className="number">Unidades</th>
-                <th className="number">Cotización</th>
-                <th className="number">Peso</th>
-                <th className="number">Valor</th>
-                <th>Estado</th>
+                <th className="number">Precio unitario EUR</th>
+                <th className="number">Valor del fondo</th>
+                <th className="number">Peso en Liberty</th>
+                <th>Consulta</th>
               </tr>
             </thead>
             <tbody>
               {state.items.map((item, index) => {
                 const quote = quoteFor(item, state.previews, state.manual);
-                const price =
-                  quote?.priceEur ?? (item.price_eur_minor ?? 0) / 10000;
-                const value = Number(item.units || 0) * price;
+                const price = unitPrice(item);
+                const units = effectiveUnits(item);
+                const value = effectiveFundValue(item);
                 return (
                   <tr key={item.id}>
                     <td>
@@ -1296,8 +1403,13 @@ function Liberty({
                     <td className="number">
                       <input
                         className="number-field"
-                        value={item.units ?? 0}
-                        onChange={(event) =>
+                        value={Number.isFinite(units) ? units : 0}
+                        onChange={(event) => {
+                          setFundValues((values) => {
+                            const next = { ...values };
+                            delete next[item.id];
+                            return next;
+                          });
                           state.setItems(
                             state.items.map((entry, itemIndex) =>
                               itemIndex === index
@@ -1307,8 +1419,8 @@ function Liberty({
                                   }
                                 : entry,
                             ),
-                          )
-                        }
+                          );
+                        }}
                       />
                     </td>
                     <td className="number">
@@ -1329,10 +1441,25 @@ function Liberty({
                       )}
                     </td>
                     <td className="number">
-                      {total ? percent.format(value / total) : "—"}
+                      <input
+                        className="number-field fund-value-field"
+                        inputMode="decimal"
+                        aria-label={`Valor total de ${item.name}`}
+                        value={
+                          hasValueOverride(item.id)
+                            ? fundValues[item.id]
+                            : value.toFixed(2)
+                        }
+                        onChange={(event) =>
+                          setFundValues({
+                            ...fundValues,
+                            [item.id]: event.target.value,
+                          })
+                        }
+                      />
                     </td>
                     <td className="number">
-                      <strong>{euro.format(value)}</strong>
+                      {total ? percent.format(value / total) : "—"}
                     </td>
                     <td>
                       <QuoteStatus
@@ -1364,7 +1491,7 @@ function Liberty({
   );
 }
 
-const savingsLabels: Record<SavingsEntry["bucket"], string> = {
+const savingsDefaultLabels: Record<SavingsEntry["bucket"], string> = {
   cash: "Cuenta corriente / Sabadell / Renault / Mintos",
   deposit: "Depósito Facto / Trade",
   funds: "Fondos / ETF",
@@ -1380,6 +1507,22 @@ function Savings({
 }) {
   const [entries, setEntries] = useState<SavingsEntry[]>([]);
   const [funds, setFunds] = useState<SavingsFundTransaction[]>([]);
+  const [settings, setSettings] = useState<SavingsSetting[]>([]);
+  const [savingsFunds, setSavingsFunds] = useState<SavingsFund[]>([]);
+  const [editing, setEditing] = useState(false);
+  const [showMovement, setShowMovement] = useState(false);
+  const [newFund, setNewFund] = useState({
+    name: "",
+    isin: "",
+    ticker: "",
+    currency: "EUR",
+  });
+  const [movement, setMovement] = useState({
+    fundId: "",
+    tradeDate: new Date().toISOString().slice(0, 10),
+    units: "",
+    amount: "",
+  });
   const [current, setCurrent] = useState<
     Record<string, { contribution: string; value: string; interest: string }>
   >({});
@@ -1389,9 +1532,13 @@ function Savings({
     const data = await api<{
       entries: SavingsEntry[];
       fundTransactions: SavingsFundTransaction[];
+      settings: SavingsSetting[];
+      savingsFunds: SavingsFund[];
     }>(`/api/savings?periodId=${period.id}`);
     setEntries(data.entries);
     setFunds(data.fundTransactions);
+    setSettings(data.settings);
+    setSavingsFunds(data.savingsFunds);
     const selected = data.entries.filter(
       (entry) => entry.period_id === period.id,
     );
@@ -1462,6 +1609,68 @@ function Savings({
     0,
   );
   const months = [...new Set(entries.map((entry) => entry.month))].reverse();
+  const labels = Object.fromEntries(
+    savingsBuckets.map((bucket) => [
+      bucket,
+      settings.find((item) => item.bucket === bucket)?.label ||
+        savingsDefaultLabels[bucket],
+    ]),
+  ) as Record<SavingsEntry["bucket"], string>;
+  const updateLabel = (bucket: SavingsEntry["bucket"], label: string) =>
+    setSettings([
+      ...settings.filter((item) => item.bucket !== bucket),
+      { bucket, label },
+    ]);
+  const saveSettings = async () => {
+    await Promise.all([
+      api("/api/savings/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          settings: savingsBuckets.map((bucket) => ({
+            bucket,
+            label: labels[bucket],
+          })),
+        }),
+      }),
+      ...savingsFunds.map((fund) =>
+        api(`/api/savings/funds/${fund.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: fund.name,
+            isin: fund.isin || null,
+            ticker: fund.ticker || null,
+            currency: fund.currency,
+          }),
+        }),
+      ),
+    ]);
+    setEditing(false);
+    await load();
+  };
+  const addFund = async (event: FormEvent) => {
+    event.preventDefault();
+    await api("/api/savings/funds", {
+      method: "POST",
+      body: JSON.stringify(newFund),
+    });
+    setNewFund({ name: "", isin: "", ticker: "", currency: "EUR" });
+    await load();
+  };
+  const addFundMovement = async (event: FormEvent) => {
+    event.preventDefault();
+    await api("/api/savings/fund-transactions", {
+      method: "POST",
+      body: JSON.stringify({
+        fundId: Number(movement.fundId),
+        tradeDate: movement.tradeDate,
+        units: Number(movement.units.replace(",", ".")),
+        amount: Number(movement.amount.replace(",", ".")),
+      }),
+    });
+    setMovement({ ...movement, units: "", amount: "" });
+    setShowMovement(false);
+    await load();
+  };
   return (
     <>
       <section className="detail-hero">
@@ -1470,15 +1679,85 @@ function Savings({
           <h2>{cents(total)}</h2>
           <p>Ahorro total del mes</p>
         </div>
-        <button className="button primary" onClick={save} disabled={saving}>
-          {saving ? "Guardando…" : "Guardar ahorro"}
-        </button>
+        <div className="action-row">
+          <button className="button secondary" onClick={() => setEditing(true)}>
+            ✎ Configurar
+          </button>
+          <button
+            className="button secondary"
+            onClick={() => setShowMovement((value) => !value)}
+          >
+            + Movimiento de fondo
+          </button>
+          <button className="button primary" onClick={save} disabled={saving}>
+            {saving ? "Guardando…" : "Guardar ahorro"}
+          </button>
+        </div>
       </section>
       {message && <div className="inline-message">{message}</div>}
+      {showMovement && (
+        <form className="panel movement-form" onSubmit={addFundMovement}>
+          <div>
+            <p className="eyebrow">Fondos / ETF</p>
+            <h3>Nuevo movimiento</h3>
+          </div>
+          <label>
+            Fondo
+            <select
+              required
+              value={movement.fundId}
+              onChange={(event) =>
+                setMovement({ ...movement, fundId: event.target.value })
+              }
+            >
+              <option value="">Seleccionar</option>
+              {savingsFunds.map((fund) => (
+                <option key={fund.id} value={fund.id}>
+                  {fund.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Fecha
+            <input
+              required
+              type="date"
+              value={movement.tradeDate}
+              onChange={(event) =>
+                setMovement({ ...movement, tradeDate: event.target.value })
+              }
+            />
+          </label>
+          <label>
+            Participaciones
+            <input
+              required
+              inputMode="decimal"
+              value={movement.units}
+              onChange={(event) =>
+                setMovement({ ...movement, units: event.target.value })
+              }
+            />
+          </label>
+          <label>
+            Importe EUR
+            <input
+              required
+              inputMode="decimal"
+              value={movement.amount}
+              onChange={(event) =>
+                setMovement({ ...movement, amount: event.target.value })
+              }
+            />
+          </label>
+          <button className="button primary">Guardar movimiento</button>
+        </form>
+      )}
       <section className="metric-grid savings-editor">
         {savingsBuckets.map((bucket) => (
           <article className="panel savings-card" key={bucket}>
-            <p className="eyebrow">{savingsLabels[bucket]}</p>
+            <p className="eyebrow">{labels[bucket]}</p>
             <label>
               Aportación del mes
               <input
@@ -1537,12 +1816,12 @@ function Savings({
                 <th>Mes</th>
                 {savingsBuckets.map((bucket) => (
                   <th className="number" key={`${bucket}-c`}>
-                    {savingsLabels[bucket]} · Aport.
+                    {labels[bucket]} · Aport.
                   </th>
                 ))}
                 {savingsBuckets.map((bucket) => (
                   <th className="number" key={`${bucket}-v`}>
-                    {savingsLabels[bucket]} · Actual
+                    {labels[bucket]} · Actual
                   </th>
                 ))}
                 <th className="number">Total actual</th>
@@ -1656,6 +1935,66 @@ function Savings({
           </table>
         </div>
       </section>
+      {editing && (
+        <div className="modal-backdrop" onMouseDown={() => setEditing(false)}>
+          <section
+            className="modal-card savings-config-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">Configuración</p>
+                <h2>Tarjetas y fondos de Ahorro</h2>
+              </div>
+              <button className="icon-button" onClick={() => setEditing(false)}>
+                ×
+              </button>
+            </div>
+            <div className="config-section">
+              <h3>Nombres de tarjetas y columnas</h3>
+              <div className="settings-grid">
+                {savingsBuckets.map((bucket) => (
+                  <label key={bucket}>
+                    {bucket}
+                    <input
+                      value={labels[bucket]}
+                      onChange={(event) => updateLabel(bucket, event.target.value)}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="config-section">
+              <h3>Fondos configurados</h3>
+              <div className="table-scroll">
+                <table>
+                  <thead><tr><th>Nombre</th><th>ISIN</th><th>Ticker</th><th>Divisa</th></tr></thead>
+                  <tbody>
+                    {savingsFunds.map((fund) => (
+                      <tr key={fund.id}>
+                        <td><input value={fund.name} onChange={(event) => setSavingsFunds(savingsFunds.map((item) => item.id === fund.id ? { ...item, name: event.target.value } : item))} /></td>
+                        <td><input value={fund.isin || ""} onChange={(event) => setSavingsFunds(savingsFunds.map((item) => item.id === fund.id ? { ...item, isin: event.target.value.toUpperCase() } : item))} /></td>
+                        <td><input value={fund.ticker || ""} onChange={(event) => setSavingsFunds(savingsFunds.map((item) => item.id === fund.id ? { ...item, ticker: event.target.value } : item))} /></td>
+                        <td><input className="currency-field" value={fund.currency} onChange={(event) => setSavingsFunds(savingsFunds.map((item) => item.id === fund.id ? { ...item, currency: event.target.value.toUpperCase() } : item))} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <form className="fund-add-row" onSubmit={addFund}>
+              <input required placeholder="Nuevo fondo" value={newFund.name} onChange={(event) => setNewFund({ ...newFund, name: event.target.value })} />
+              <input placeholder="ISIN" value={newFund.isin} onChange={(event) => setNewFund({ ...newFund, isin: event.target.value.toUpperCase() })} />
+              <input placeholder="Ticker" value={newFund.ticker} onChange={(event) => setNewFund({ ...newFund, ticker: event.target.value })} />
+              <button className="button secondary">Añadir fondo</button>
+            </form>
+            <div className="modal-actions">
+              <button className="button secondary" onClick={() => setEditing(false)}>Cancelar</button>
+              <button className="button primary" onClick={saveSettings}>Guardar configuración</button>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }
@@ -1674,6 +2013,7 @@ function Pension({
     cumulative_contributions_cents: 0,
   };
   const [entry, setEntry] = useState<PensionEntry>(empty);
+  const [history, setHistory] = useState<PensionHistory[]>([]);
   const [form, setForm] = useState({
     employer: "0.00",
     personal: "0.00",
@@ -1681,17 +2021,23 @@ function Pension({
   });
   const [saving, setSaving] = useState(false);
   useEffect(() => {
-    api<{ pension: PensionEntry | null }>(
-      `/api/portfolio/pension?periodId=${period.id}`,
-    ).then(({ pension }) => {
-      const value = pension || empty;
-      setEntry(value);
-      setForm({
-        employer: fromCents(value.employer_cents),
-        personal: fromCents(value.personal_cents),
-        current: fromCents(value.current_value_cents),
+    Promise.all([
+      api<{ pension: PensionEntry | null }>(
+        `/api/portfolio/pension?periodId=${period.id}`,
+      ),
+      api<{ history: PensionHistory[] }>(
+        `/api/pension/details?periodId=${period.id}`,
+      ),
+    ]).then(([{ pension }, details]) => {
+        const value = pension || empty;
+        setEntry(value);
+        setHistory(details.history);
+        setForm({
+          employer: fromCents(value.employer_cents),
+          personal: fromCents(value.personal_cents),
+          current: fromCents(value.current_value_cents),
+        });
       });
-    });
   }, [period.id]);
   const expected =
     entry.cumulative_contributions_cents -
@@ -1701,6 +2047,15 @@ function Pension({
     toCents(form.personal);
   const current = toCents(form.current);
   const benefit = current - expected;
+  const selectedHistory = history.at(-1);
+  const employerCumulative =
+    Number(selectedHistory?.cumulative_employer_cents || 0) -
+    entry.employer_cents +
+    toCents(form.employer);
+  const personalCumulative =
+    Number(selectedHistory?.cumulative_personal_cents || 0) -
+    entry.personal_cents +
+    toCents(form.personal);
   const save = async () => {
     setSaving(true);
     try {
@@ -1788,6 +2143,24 @@ function Pension({
           </dl>
         </div>
       </section>
+      <section className="metric-grid pension-metrics">
+        <Metric label="Aportado por la empresa" value={employerCumulative} tone="blue" />
+        <Metric label="Aportado personalmente" value={personalCumulative} tone="violet" />
+        <Metric label="Aportación este mes" value={toCents(form.employer) + toCents(form.personal)} tone="gold" />
+        <Metric label="Ganancia acumulada" value={benefit} tone={benefit >= 0 ? "green" : "coral"} />
+      </section>
+      <section className="panel table-panel pension-history-table">
+        <div className="panel-heading">
+          <div><p className="eyebrow">Detalle mensual</p><h3>Histórico del fondo de pensiones</h3></div>
+          <span>{history.length} meses</span>
+        </div>
+        <div className="table-scroll">
+          <table>
+            <thead><tr><th>Mes</th><th className="number">Empresa</th><th className="number">Personal</th><th className="number">Aportado acum.</th><th className="number">Valor</th><th className="number">Ganancia</th><th className="number">Rentabilidad</th><th className="number">Variación mes</th></tr></thead>
+            <tbody>{[...history].reverse().map((item) => <tr key={item.period_id}><td><strong>{labelMonth(item.month)}</strong></td><td className="number">{cents(item.employer_cents)}</td><td className="number">{cents(item.personal_cents)}</td><td className="number">{cents(item.cumulative_contributions_cents)}</td><td className="number"><strong>{cents(item.current_value_cents)}</strong></td><td className={`number ${item.gain_cents >= 0 ? "positive" : "negative"}`}>{cents(item.gain_cents)}</td><td className={`number ${item.gain_cents >= 0 ? "positive" : "negative"}`}>{item.cumulative_contributions_cents ? percent.format(item.gain_cents / item.cumulative_contributions_cents) : "—"}</td><td className={`number ${item.month_change_cents >= 0 ? "positive" : "negative"}`}>{cents(item.month_change_cents)}</td></tr>)}</tbody>
+          </table>
+        </div>
+      </section>
       <HistoryPanel
         category="pension"
         title="Evolución del fondo de pensiones"
@@ -1815,7 +2188,7 @@ function HistoryPanel({
           <p className="eyebrow">Histórico</p>
           <h3>{title}</h3>
         </div>
-        <span>Últimos 36 meses</span>
+        <span>Todo el histórico · {points.length} meses</span>
       </div>
       <LineChart
         points={points}
@@ -1832,7 +2205,7 @@ function StockBreakdown({
   items: Instrument[];
   overview: StockOverview[];
 }) {
-  const data = items
+  const currentData = items
     .map((item) => {
       const info = overview.find((entry) => entry.id === item.id);
       return {
@@ -1843,8 +2216,22 @@ function StockBreakdown({
     })
     .filter((item) => item.value > 0)
     .sort((a, b) => b.value - a.value);
-  const maxValue = Math.max(...data.map((item) => item.value), 1);
-  const maxResult = Math.max(...data.map((item) => Math.abs(item.result)), 1);
+  const historicalData = overview
+    .map((item) => ({
+      name: item.name,
+      result: Number(item.result_cents || 0),
+      activity:
+        Number(item.total_paid_cents || 0) +
+        Number(item.total_withdrawn_cents || 0) +
+        Number(item.total_dividends_cents || 0),
+    }))
+    .filter((item) => item.activity > 0)
+    .sort((a, b) => Math.abs(b.result) - Math.abs(a.result));
+  const maxValue = Math.max(...currentData.map((item) => item.value), 1);
+  const maxResult = Math.max(
+    ...historicalData.map((item) => Math.abs(item.result)),
+    1,
+  );
   return (
     <section className="two-column stock-charts">
       <div className="panel">
@@ -1855,7 +2242,7 @@ function StockBreakdown({
           </div>
         </div>
         <div className="bar-chart">
-          {data.map((item) => (
+          {currentData.map((item) => (
             <div className="bar-row" key={item.name}>
               <span>{item.name}</span>
               <i>
@@ -1870,11 +2257,12 @@ function StockBreakdown({
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Resultados</p>
-            <h3>Ganancia / pérdida por activo</h3>
+            <h3>Ganancia / pérdida histórica por activo</h3>
           </div>
+          <span>Incluye posiciones vendidas</span>
         </div>
         <div className="bar-chart result-bars">
-          {data.map((item) => (
+          {historicalData.map((item) => (
             <div className="bar-row" key={item.name}>
               <span>{item.name}</span>
               <i>
@@ -1921,6 +2309,7 @@ function Stocks({
   const [dividend, setDividend] = useState({
     paymentDate: new Date().toISOString().slice(0, 10),
     instrumentId: "",
+    perShare: "",
     amount: "",
     currency: "EUR",
     fxToEur: "",
@@ -1947,12 +2336,14 @@ function Stocks({
   }, [loadDetail]);
   const locked =
     period.status === "closed" || state.items.some((item) => item.is_locked);
+  const priceForStock = (item: Instrument) => {
+    const saved = (item.price_eur_minor ?? 0) / 10000;
+    if (locked) return saved;
+    return quoteFor(item, state.previews, state.manual)?.priceEur ?? saved;
+  };
   const total = state.items.reduce(
     (sum, item) =>
-      sum +
-      Number(item.units || 0) *
-        (quoteFor(item, state.previews, state.manual)?.priceEur ??
-          (item.price_eur_minor ?? 0) / 10000),
+      sum + Number(item.units || 0) * priceForStock(item),
     0,
   );
   const save = async () => {
@@ -1960,15 +2351,18 @@ function Stocks({
       return state.setMessage(
         "Este cierre de Bolsa ya está guardado y permanece bloqueado.",
       );
-    const quoted = state.items
+    const positions = state.items.filter(
+      (item) => Math.abs(Number(item.units || 0)) > 0.00000001,
+    );
+    const quoted = positions
       .map((item) => ({
         item,
         quote: quoteFor(item, state.previews, state.manual),
       }))
       .filter((row) => row.quote);
-    if (!quoted.length)
+    if (quoted.length !== positions.length)
       return state.setMessage(
-        "Consulta cotizaciones o introduce un valor manual.",
+        "Consulta o introduce manualmente el precio unitario de todas las posiciones antes de guardar.",
       );
     state.setBusy(true);
     try {
@@ -2026,6 +2420,9 @@ function Stocks({
       body: JSON.stringify({
         paymentDate: dividend.paymentDate,
         instrumentId: Number(dividend.instrumentId),
+        perShare: dividend.perShare
+          ? Number(dividend.perShare.replace(",", "."))
+          : undefined,
         amount: Number(dividend.amount.replace(",", ".")),
         currency: dividend.currency,
         fxToEur: dividend.fxToEur
@@ -2034,7 +2431,7 @@ function Stocks({
         note: dividend.note || null,
       }),
     });
-    setDividend({ ...dividend, amount: "", note: "" });
+    setDividend({ ...dividend, perShare: "", amount: "", note: "" });
     setShowDividend(false);
     await loadDetail();
   };
@@ -2053,6 +2450,8 @@ function Stocks({
   );
   const resultTotal =
     Math.round(total * 100) - paidTotal + withdrawnTotal + dividendTotal;
+  const totalReturn = paidTotal ? resultTotal / Math.abs(paidTotal) : null;
+  const dividendReturn = paidTotal ? dividendTotal / Math.abs(paidTotal) : null;
   const missing = Object.values(state.previews).filter((item) => item.error);
   return (
     <>
@@ -2085,9 +2484,9 @@ function Stocks({
           <button
             className="button secondary"
             onClick={state.preview}
-            disabled={state.busy || locked}
+            disabled={state.busy}
           >
-            ↻ Cotizaciones
+            {state.busy ? "Consultando…" : "↻ Cotizaciones"}
           </button>
           <button
             className="button primary"
@@ -2120,6 +2519,18 @@ function Stocks({
           value={resultTotal}
           tone={resultTotal >= 0 ? "green" : "coral"}
         />
+        <div className="metric violet">
+          <span>Rentabilidad total</span>
+          <strong>{totalReturn == null ? "—" : percent.format(totalReturn)}</strong>
+          <small>Incluye dividendos</small>
+        </div>
+        <div className="metric gold">
+          <span>Rentabilidad dividendos</span>
+          <strong>
+            {dividendReturn == null ? "—" : percent.format(dividendReturn)}
+          </strong>
+          <small>Dividendos / total pagado</small>
+        </div>
       </section>
       <StockBreakdown items={state.items} overview={overview} />
       {showForm && (
@@ -2242,6 +2653,16 @@ function Stocks({
             </select>
           </label>
           <label>
+            Dividendo por acción
+            <input
+              inputMode="decimal"
+              value={dividend.perShare}
+              onChange={(event) =>
+                setDividend({ ...dividend, perShare: event.target.value })
+              }
+            />
+          </label>
+          <label>
             Importe bruto
             <input
               required
@@ -2302,15 +2723,16 @@ function Stocks({
               <tr>
                 <th>Activo</th>
                 <th>Símbolo</th>
-                <th className="number">Valor actual</th>
+                <th className="number">Precio unitario</th>
                 <th className="number">Unidades</th>
+                <th className="number">Valor posición</th>
+                <th className="number">Peso cartera</th>
                 <th className="number">Invertido neto</th>
                 <th className="number">Pagado</th>
                 <th className="number">Retirado</th>
                 <th className="number">Dividendos</th>
                 <th className="number">Resultado</th>
                 <th className="number">Variación</th>
-                <th className="number">Equilibrio</th>
                 <th>Estado</th>
               </tr>
             </thead>
@@ -2318,8 +2740,8 @@ function Stocks({
               {state.items.map((item, index) => {
                 const info = byId.get(item.id);
                 const quote = quoteFor(item, state.previews, state.manual);
-                const price =
-                  quote?.priceEur ?? (item.price_eur_minor ?? 0) / 10000;
+                const livePrice = state.previews[item.id]?.quote?.priceEur;
+                const price = priceForStock(item);
                 const value = Number(item.units || 0) * price;
                 const result =
                   value * 100 -
@@ -2340,8 +2762,13 @@ function Stocks({
                     </td>
                     <td>{item.reference_symbol || item.ticker || "—"}</td>
                     <td className="number">
-                      {quote || item.price_eur_minor ? (
-                        <strong>{euro.format(value)}</strong>
+                      {price ? (
+                        <>
+                          <strong>{euro.format(price)}</strong>
+                          {locked && livePrice != null && (
+                            <small>Cotización actual: {euro.format(livePrice)}</small>
+                          )}
+                        </>
                       ) : (
                         <input
                           className="number-field"
@@ -2375,6 +2802,12 @@ function Stocks({
                         }
                       />
                     </td>
+                    <td className="number">
+                      <strong>{euro.format(value)}</strong>
+                    </td>
+                    <td className="number">
+                      {total ? percent.format(value / total) : "—"}
+                    </td>
                     <td className="number">{cents(net)}</td>
                     <td className="number">{cents(info?.total_paid_cents)}</td>
                     <td className="number">
@@ -2392,11 +2825,6 @@ function Stocks({
                       className={`number ${result >= 0 ? "positive" : "negative"}`}
                     >
                       {net ? percent.format(result / Math.abs(net)) : "—"}
-                    </td>
-                    <td className="number">
-                      {info?.equilibrium_price
-                        ? euro.format(info.equilibrium_price)
-                        : "—"}
                     </td>
                     <td>
                       <QuoteStatus
@@ -2451,7 +2879,6 @@ function Stocks({
                 <th className="number">Precio</th>
                 <th className="number">Total</th>
                 <th>Broker</th>
-                <th>Origen</th>
               </tr>
             </thead>
             <tbody>
@@ -2482,7 +2909,6 @@ function Stocks({
                     {cents(item.total_cents)}
                   </td>
                   <td>{item.broker || "—"}</td>
-                  <td>{item.source}</td>
                 </tr>
               ))}
             </tbody>
@@ -2503,9 +2929,11 @@ function Stocks({
               <tr>
                 <th>Fecha</th>
                 <th>Activo</th>
-                <th className="number">Importe original</th>
-                <th className="number">Cambio EUR</th>
+                <th className="number">Por acción</th>
                 <th className="number">Importe EUR</th>
+                <th className="number">Invertido al pago</th>
+                <th className="number">Rentabilidad</th>
+                <th>Divisa / cambio</th>
                 <th>Nota</th>
               </tr>
             </thead>
@@ -2522,19 +2950,38 @@ function Stocks({
                       <strong>{item.instrument_name}</strong>
                     </td>
                     <td className="number">
-                      {decimal.format(item.gross_minor / item.amount_scale)}{" "}
-                      {item.currency}
+                      {item.per_share_minor != null && item.per_share_scale
+                        ? `${decimal.format(item.per_share_minor / item.per_share_scale)} ${item.currency}`
+                        : "—"}
                     </td>
-                    <td className="number">{decimal.format(item.fx_to_eur)}</td>
                     <td className="number positive">
                       {cents(item.amount_eur_cents)}
+                    </td>
+                    <td className="number">
+                      {item.invested_at_payment_cents
+                        ? cents(item.invested_at_payment_cents)
+                        : "—"}
+                    </td>
+                    <td className="number positive">
+                      {item.invested_at_payment_cents
+                        ? percent.format(
+                            item.amount_eur_cents /
+                              Math.abs(item.invested_at_payment_cents),
+                          )
+                        : "—"}
+                    </td>
+                    <td>
+                      {item.currency}
+                      {item.currency !== "EUR"
+                        ? ` · ${decimal.format(item.fx_to_eur)}`
+                        : ""}
                     </td>
                     <td>{item.note || "—"}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="empty-table">
+                  <td colSpan={8} className="empty-table">
                     Añade el primer dividendo con el botón superior.
                   </td>
                 </tr>
