@@ -123,13 +123,36 @@ app.get("/api/summary", async (c) => {
   return c.json({ periods: results });
 });
 
+app.get("/api/history/:category", async (c) => {
+  const category = c.req.param("category");
+  if (category === "pension") {
+    const { results } = await c.env.DB.prepare(
+      `SELECT p.month, pe.current_value_cents value_cents,
+        pe.cumulative_contributions_cents contributions_cents
+       FROM periods p JOIN pension_entries pe ON pe.period_id = p.id
+       ORDER BY p.month`,
+    ).all();
+    return c.json({ points: results });
+  }
+  if (!['liberty', 'stocks'].includes(category)) return c.json({ error: "Categoría no válida" }, 400);
+  const column = category === "liberty" ? "liberty_cents" : "stocks_cents";
+  const { results } = await c.env.DB.prepare(
+    `SELECT p.month, s.${column} value_cents
+     FROM periods p JOIN summary_snapshots s ON s.period_id = p.id
+     WHERE s.${column} IS NOT NULL ORDER BY p.month`,
+  ).all();
+  return c.json({ points: results });
+});
+
 const periodSchema = z.object({
   month: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   copyPrevious: z.boolean().default(true),
 });
 
 app.post("/api/periods", zValidator("json", periodSchema), async (c) => {
-  const { month, copyPrevious } = c.req.valid("json");
+  const input = c.req.valid("json");
+  const month = `${input.month.slice(0, 7)}-01`;
+  const { copyPrevious } = input;
   const existing = await c.env.DB.prepare("SELECT id FROM periods WHERE month = ?").bind(month).first<{ id: number }>();
   if (existing) return c.json({ id: existing.id, created: false });
 
@@ -151,9 +174,9 @@ app.post("/api/periods", zValidator("json", periodSchema), async (c) => {
       c.env.DB.prepare(
         `INSERT INTO holdings
           (period_id, instrument_id, units, average_cost_cents, invested_cents, withdrawn_cents, price_minor, price_scale,
-           price_currency, fx_to_eur, price_eur_minor, market_value_cents, quote_source, quoted_at)
+           price_currency, fx_to_eur, price_eur_minor, market_value_cents, quote_source, quoted_at, is_locked)
          SELECT ?, instrument_id, units, average_cost_cents, invested_cents, withdrawn_cents, price_minor, price_scale,
-           price_currency, fx_to_eur, price_eur_minor, market_value_cents, quote_source, quoted_at
+           price_currency, fx_to_eur, price_eur_minor, market_value_cents, 'Copiado del mes anterior', quoted_at, 0
          FROM holdings WHERE period_id = ?`,
       ).bind(inserted.id, previous.id),
       c.env.DB.prepare(
@@ -219,6 +242,87 @@ app.get("/api/portfolio/:category", async (c) => {
     ? await c.env.DB.prepare("SELECT * FROM pension_entries WHERE period_id = ?").bind(periodId).first()
     : null;
   return c.json({ period, instruments: results, pension });
+});
+
+app.get("/api/stocks/overview", async (c) => {
+  const periodId = Number(c.req.query("periodId"));
+  if (!Number.isInteger(periodId)) return c.json({ error: "Periodo no válido" }, 400);
+  const { results } = await c.env.DB.prepare(
+    `SELECT i.id, i.name, i.isin, i.ticker, i.reference_symbol, i.currency,
+      COALESCE(h.units, 0) units, COALESCE(h.market_value_cents, 0) market_value_cents,
+      h.price_eur_minor, h.quoted_at, h.is_locked,
+      COALESCE(SUM(CASE WHEN t.total_cents > 0 THEN t.total_cents ELSE 0 END), 0) total_paid_cents,
+      ABS(COALESCE(SUM(CASE WHEN t.total_cents < 0 THEN t.total_cents ELSE 0 END), 0)) total_withdrawn_cents,
+      COALESCE(SUM(t.total_cents), 0) net_invested_cents
+     FROM instruments i
+     LEFT JOIN holdings h ON h.instrument_id = i.id AND h.period_id = ?
+     LEFT JOIN periods selected ON selected.id = ?
+     LEFT JOIN stock_transactions t ON t.instrument_id = i.id
+       AND substr(t.trade_date, 1, 7) <= substr(selected.month, 1, 7)
+     WHERE i.category = 'stocks' AND i.active = 1
+     GROUP BY i.id, h.units, h.market_value_cents, h.price_eur_minor, h.quoted_at, h.is_locked
+     ORDER BY i.sort_order, i.name`,
+  ).bind(periodId, periodId).all<Record<string, unknown>>();
+  return c.json({
+    items: results.map((item) => {
+      const marketValue = Number(item.market_value_cents || 0);
+      const paid = Number(item.total_paid_cents || 0);
+      const withdrawn = Number(item.total_withdrawn_cents || 0);
+      const net = Number(item.net_invested_cents || 0);
+      const units = Number(item.units || 0);
+      const result = marketValue - paid + withdrawn;
+      return {
+        ...item,
+        result_cents: result,
+        variation: net ? result / Math.abs(net) : null,
+        equilibrium_price: units ? (net / 100) / units : null,
+      };
+    }),
+  });
+});
+
+app.get("/api/stocks/transactions", async (c) => {
+  const requested = c.req.query("periodId");
+  const period = requested
+    ? await c.env.DB.prepare("SELECT month FROM periods WHERE id = ?").bind(Number(requested)).first<{ month: string }>()
+    : null;
+  const { results } = await c.env.DB.prepare(
+    `SELECT t.id, t.trade_date, t.kind, t.units, t.price_minor, t.price_scale, t.total_cents,
+      t.currency, t.fx_to_eur, t.broker, t.source, i.id instrument_id, i.name instrument_name
+     FROM stock_transactions t JOIN instruments i ON i.id = t.instrument_id
+     WHERE (? IS NULL OR substr(t.trade_date, 1, 7) <= substr(?, 1, 7))
+     ORDER BY t.trade_date DESC, t.id DESC`,
+  ).bind(period?.month ?? null, period?.month ?? null).all();
+  return c.json({ transactions: results });
+});
+
+const transactionSchema = z.object({
+  tradeDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  instrumentId: z.number().int(),
+  kind: z.enum(["A", "D", "R", "E"]),
+  units: z.number().positive(),
+  price: z.number().nonnegative(),
+  broker: z.string().trim().max(80).nullable().optional(),
+  currency: z.string().trim().toUpperCase().length(3).default("EUR"),
+});
+
+app.post("/api/stocks/transactions", zValidator("json", transactionSchema), async (c) => {
+  const item = c.req.valid("json");
+  const instrument = await c.env.DB.prepare("SELECT id FROM instruments WHERE id = ? AND category = 'stocks'")
+    .bind(item.instrumentId).first();
+  if (!instrument) return c.json({ error: "Activo no encontrado" }, 404);
+  const sign = item.kind === "D" || item.kind === "E" ? -1 : 1;
+  const units = Math.abs(item.units) * sign;
+  const totalCents = Math.round(units * item.price * 100);
+  const inserted = await c.env.DB.prepare(
+    `INSERT INTO stock_transactions
+      (trade_date, instrument_id, kind, units, price_minor, price_scale, total_cents, currency, broker, source)
+     VALUES (?, ?, ?, ?, ?, 10000, ?, ?, ?, 'manual') RETURNING id`,
+  ).bind(
+    item.tradeDate, item.instrumentId, item.kind, units, Math.round(item.price * 10000),
+    totalCents, item.currency, item.broker || null,
+  ).first<{ id: number }>();
+  return c.json(inserted, 201);
 });
 
 const instrumentSchema = z.object({
@@ -291,6 +395,18 @@ app.put(
   async (c) => {
     const periodId = Number(c.req.param("id"));
     const { category, items } = c.req.valid("json");
+    if (category === "stocks") {
+      const period = await c.env.DB.prepare("SELECT status FROM periods WHERE id = ?").bind(periodId).first<{ status: string }>();
+      if (!period) return c.json({ error: "Mes no encontrado" }, 404);
+      if (period.status === "closed") {
+        return c.json({ error: "Este cierre histórico de Bolsa ya está guardado y no puede sobrescribirse" }, 409);
+      }
+      const locked = await c.env.DB.prepare(
+        `SELECT 1 locked FROM holdings h JOIN instruments i ON i.id = h.instrument_id
+         WHERE h.period_id = ? AND i.category = 'stocks' AND h.is_locked = 1 LIMIT 1`,
+      ).bind(periodId).first();
+      if (locked) return c.json({ error: "Este cierre de Bolsa ya está guardado y no puede sobrescribirse" }, 409);
+    }
     const allowed = await c.env.DB.prepare("SELECT id FROM instruments WHERE category = ?").bind(category).all<{ id: number }>();
     const ids = new Set(allowed.results.map((item) => item.id));
     if (items.some((item) => !ids.has(item.instrumentId))) return c.json({ error: "Instrumento fuera de categoría" }, 400);
@@ -299,18 +415,20 @@ app.put(
       return c.env.DB.prepare(
         `INSERT INTO holdings
           (period_id, instrument_id, units, average_cost_cents, invested_cents, withdrawn_cents,
-           price_minor, price_scale, price_currency, fx_to_eur, price_eur_minor, market_value_cents, quote_source, quoted_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 10000, ?, ?, ?, ?, ?, ?)
+           price_minor, price_scale, price_currency, fx_to_eur, price_eur_minor, market_value_cents, quote_source, quoted_at, is_locked)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 10000, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(period_id, instrument_id) DO UPDATE SET
            units=excluded.units, average_cost_cents=excluded.average_cost_cents, invested_cents=excluded.invested_cents,
            withdrawn_cents=excluded.withdrawn_cents, price_minor=excluded.price_minor, price_scale=excluded.price_scale,
            price_currency=excluded.price_currency, fx_to_eur=excluded.fx_to_eur, price_eur_minor=excluded.price_eur_minor,
            market_value_cents=excluded.market_value_cents, quote_source=excluded.quote_source, quoted_at=excluded.quoted_at,
+           is_locked=excluded.is_locked,
            updated_at=CURRENT_TIMESTAMP`,
       ).bind(
         periodId, item.instrumentId, item.units, item.averageCostCents ?? null, item.investedCents ?? null,
         item.withdrawnCents, Math.round(item.price * 10000), item.priceCurrency, item.fxToEur,
         Math.round(item.priceEur * 10000), marketValueCents, item.quoteSource, item.quotedAt,
+        category === "stocks" ? 1 : 0,
       );
     });
     if (statements.length) await c.env.DB.batch(statements);
@@ -367,24 +485,39 @@ async function recomputeSummary(db: D1Database, periodId: number) {
 }
 
 async function fetchQuote(instrument: Record<string, unknown>): Promise<Quote> {
-  const lookupKey = String(instrument.ticker || instrument.isin || instrument.name);
+  const lookupKey = String(instrument.ticker || instrument.isin || instrument.reference_symbol || instrument.name);
   const headers = { "user-agent": "Mozilla/5.0 CuentasYAhorro/1.0", accept: "application/json" };
   let symbol = String(instrument.ticker || "");
   let resolvedName = String(instrument.name);
-  if (!symbol) {
-    const search = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(lookupKey)}&quotesCount=5&newsCount=0`, { headers });
-    if (!search.ok) throw new Error(`No se pudo resolver ${lookupKey}`);
-    const payload = await search.json() as { quotes?: Array<{ symbol?: string; shortname?: string; longname?: string; quoteType?: string }> };
-    const match = payload.quotes?.find((item) => item.symbol && item.quoteType !== "OPTION");
-    if (!match?.symbol) throw new Error(`Sin símbolo para ${lookupKey}`);
-    symbol = match.symbol;
-    resolvedName = match.longname || match.shortname || resolvedName;
+  type Meta = { regularMarketPrice?: number; currency?: string };
+  const chart = async (candidate: string): Promise<Meta | null> => {
+    const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(candidate)}?interval=1d&range=5d`, { headers });
+    if (!response.ok) return null;
+    const payload = await response.json() as { chart?: { result?: Array<{ meta?: Meta }> } };
+    const meta = payload.chart?.result?.[0]?.meta;
+    return meta?.regularMarketPrice && meta.currency ? meta : null;
+  };
+
+  let meta = symbol ? await chart(symbol) : null;
+  if (!meta) {
+    const queries = [...new Set([instrument.isin, instrument.reference_symbol, instrument.name].filter(Boolean).map(String))];
+    for (const query of queries) {
+      const search = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8&newsCount=0`, { headers });
+      if (!search.ok) continue;
+      const payload = await search.json() as { quotes?: Array<{ symbol?: string; shortname?: string; longname?: string; quoteType?: string }> };
+      for (const match of payload.quotes || []) {
+        if (!match.symbol || match.quoteType === "OPTION") continue;
+        const candidate = await chart(match.symbol);
+        if (!candidate) continue;
+        symbol = match.symbol;
+        meta = candidate;
+        resolvedName = match.longname || match.shortname || resolvedName;
+        break;
+      }
+      if (meta) break;
+    }
   }
-  const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`, { headers });
-  if (!response.ok) throw new Error(`Sin cotización para ${symbol}`);
-  const payload = await response.json() as { chart?: { result?: Array<{ meta?: { regularMarketPrice?: number; currency?: string } }> } };
-  const meta = payload.chart?.result?.[0]?.meta;
-  if (!meta?.regularMarketPrice || !meta.currency) throw new Error(`Cotización incompleta para ${symbol}`);
+  if (!meta?.regularMarketPrice || !meta.currency || !symbol) throw new Error(`Sin cotización para ${lookupKey}`);
   const currency = meta.currency.toUpperCase();
   let fxToEur = 1;
   if (currency !== "EUR") {
@@ -411,6 +544,8 @@ app.onError((error, c) => {
   console.error(error);
   return c.json({ error: error.message || "Error interno" }, 500);
 });
+
+app.get("/api/test-new", (c) => c.json({ routes: app.routes.length }));
 
 app.notFound(() => jsonError("Ruta no encontrada", 404));
 

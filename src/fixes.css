@@ -6,3 +6,146 @@ main {
 .table-panel {
   min-width: 0;
 }
+
+.sidebar nav {
+  margin-top: 34px;
+}
+
+.overview-panel .table-scroll,
+.variation-panel .table-scroll {
+  max-height: calc(100vh - 210px);
+}
+
+.history-table,
+.variation-table,
+.stocks-summary table {
+  min-width: 1120px;
+}
+
+.history-table thead th,
+.variation-table thead th,
+.ledger-panel thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.history-table th:first-child,
+.history-table td:first-child,
+.variation-table th:first-child,
+.variation-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: white;
+  box-shadow: 1px 0 #edf0ed;
+}
+
+.history-table thead th:first-child,
+.variation-table thead th:first-child {
+  z-index: 3;
+  background: #f7f9f7;
+}
+
+.history-panel {
+  margin-top: 18px;
+}
+
+.chart-legend {
+  color: #7f8b85;
+}
+
+.movement-form {
+  display: grid;
+  grid-template-columns: 1.25fr repeat(5, minmax(120px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+.movement-form h3 {
+  margin: 0;
+  font: 700 18px Manrope;
+}
+
+.movement-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #637068;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.movement-form input,
+.movement-form select {
+  min-width: 0;
+  width: 100%;
+  padding: 10px;
+}
+
+.stocks-summary {
+  margin-bottom: 18px;
+}
+
+.muted-row {
+  opacity: .62;
+}
+
+.type-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 0 22px 14px;
+  color: #69766f;
+  font-size: 12px;
+}
+
+.type-legend b,
+.movement-kind {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  margin-right: 4px;
+  font-size: 11px;
+}
+
+.kind-a,
+.type-legend span:nth-child(1) b { background: #ddf5eb; color: #187257; }
+.kind-d,
+.type-legend span:nth-child(2) b { background: #fee9e4; color: #a54c40; }
+.kind-r,
+.type-legend span:nth-child(3) b { background: #e6effc; color: #466c9e; }
+.kind-e,
+.type-legend span:nth-child(4) b { background: #fff0d9; color: #956018; }
+
+.ledger-scroll {
+  max-height: 520px;
+}
+
+@media(max-width: 1280px) {
+  .movement-form {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media(max-width: 760px) {
+  .sidebar nav {
+    margin-top: 0;
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+
+  .nav-item,
+  .nav-item.active,
+  .nav-item:not(.active) {
+    flex: 0 0 52px;
+    padding: 10px;
+  }
+
+  .movement-form {
+    grid-template-columns: 1fr;
+  }
+}

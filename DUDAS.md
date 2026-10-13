@@ -1,12 +1,20 @@
-# Decisiones provisionales y dudas
+# Decisiones aplicadas y dudas pendientes
 
-1. **PIAS / Aportaciones.** En esta primera versión se guarda un total mensual editable. Falta decidir si el modelo definitivo separa Finletic y MyInvestor, y qué aportaciones o retiradas deben alimentar cada uno.
-2. **ISIN de Liberty.** El Excel no contiene los ISIN como texto. Hay que completar el identificador de cada fondo en la aplicación para evitar coincidencias ambiguas por nombre.
-3. **Proveedor de fondos.** Yahoo Finance funciona bien cuando el ISIN o ticker resuelve una clase concreta, pero no garantiza cobertura de todos los fondos. Conviene confirmar si se acepta este proveedor o si se añadirá uno con API key.
-4. **Día de cierre.** El histórico usa el día 14 de cada mes. Hay que confirmar si debe mantenerse fijo o si el cierre puede guardarse con cualquier fecha.
-5. **Liberty: unidades y aportaciones.** La app copia las unidades del mes anterior y permite editarlas. Falta definir si una aportación debe introducirse como importe y derivar automáticamente unidades nuevas, y cómo tratar comisiones.
-6. **Bolsa: operaciones.** Se ha importado el histórico agregado y las posiciones actuales. Falta perfilar el libro de operaciones: compras, ventas, dividendos, comisiones, retenciones, splits y cambio de divisa de cada operación.
-7. **Bolsa: nombres y símbolos.** Algunos rótulos del Excel, como `SP500`, `Rare Earth` o `Defense`, pueden representar ETF concretos. Se necesitan sus ISIN o tickers exactos.
-8. **Fonditel / HPE.** El Excel deja de registrar aportaciones en septiembre de 2026 aunque mantiene valor actual. Hay que confirmar si el plan terminó, se traspasó o solo dejó de recibir aportaciones.
-9. **Histórico de notas.** Se importaron las notas de la hoja `Valor`. Falta decidir si deben poder editarse en cierres ya cerrados o si esos cierres deben bloquearse.
-10. **Acceso.** La versión inicial usa una contraseña única. Si habrá más usuarios, conviene sustituirla por Cloudflare Access o cuentas separadas.
+## Decisiones aplicadas
+
+- PIAS se mantiene como una única cifra mensual, editable y general.
+- Cada cierre se identifica por su mes, sin depender del día 14.
+- Liberty copia fondos y unidades del mes anterior. Sus aportaciones no intervienen en el cálculo: unidades por cotización determina el valor.
+- Bolsa incorpora el libro amarillo del Excel con `A` (compra), `D` (venta total), `R` (reinversión) y `E` (retirada para reinvertir).
+- Los cierres anteriores siguen editables, salvo la foto mensual de Bolsa una vez guardada.
+- El fondo se llama **Fondo de pensiones empresa** y admite nuevos meses y aportaciones futuras.
+- La aplicación sigue siendo personal, con un único PIN.
+- Las cotizaciones intentan obtenerse sin API de pago mediante Yahoo Finance, con conversión a euros usando Frankfurter/ECB y entrada manual como respaldo.
+
+## Dudas pendientes
+
+1. **Valores de la imagen que no aparecen como posiciones del Excel.** HCL Tech, Vanguard US 500, Vanguard Global y Acción IBEX 35 aparecen en la captura, pero no como posiciones actuales en las tablas importadas. ¿Son inversiones que hay que añadir o solo valores que vigilabas?
+2. **Índices de referencia.** NDX, US500 y ES35 parecen índices para comparar, no posiciones compradas. Por ahora no los he incluido como activos. ¿Quieres que aparezcan en una sección de referencias?
+3. **Valores históricos sin símbolo en la imagen.** El Excel sí contiene IAG, Netflix, Telefónica y ROVI; se conservan como históricos y se han asociado a sus símbolos habituales. En Liberty también aparecen fondos antiguos sin identificador en la captura: Fidelity European Growth, Carmignac Patrimoine, C-Quadrat y Liberty European Stock Market. ¿Necesitarás volver a activarlos y consultar su cotización?
+4. **Bolsa, siguiente nivel de detalle.** Ya están compras, ventas y reinversiones. Queda decidir más adelante si añadimos operaciones separadas para dividendos, comisiones, retenciones, splits y cambio de divisa.
+5. **Proveedor gratuito.** La solución actual no necesita clave, pero la cobertura de fondos por ISIN no está garantizada. La entrada manual evita bloquear el cierre. Si algún fondo falla de forma repetida, habrá que elegir una API especializada o introducir una clave propia.
