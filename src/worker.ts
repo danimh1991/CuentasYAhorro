@@ -414,4 +414,24 @@ app.onError((error, c) => {
 
 app.notFound(() => jsonError("Ruta no encontrada", 404));
 
-export default app;
+const worker: ExportedHandler<Env> = {
+  async fetch(request, env, executionContext) {
+    const url = new URL(request.url);
+    const prefix = "/cuentasyahorro";
+    if (url.pathname === prefix) {
+      url.pathname = `${prefix}/`;
+      return Response.redirect(url.toString(), 308);
+    }
+    if (url.pathname.startsWith(`${prefix}/`)) {
+      url.pathname = url.pathname.slice(prefix.length) || "/";
+      const rewritten = new Request(url.toString(), request);
+      if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
+        return app.fetch(rewritten, env, executionContext);
+      }
+      return env.ASSETS.fetch(rewritten);
+    }
+    return app.fetch(request, env, executionContext);
+  },
+};
+
+export default worker;

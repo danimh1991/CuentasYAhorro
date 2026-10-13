@@ -62,9 +62,12 @@ const cents = (value?: number | null) => euro.format((value ?? 0) / 100);
 const toCents = (value: string) => Math.round((Number(value.replace(",", ".")) || 0) * 100);
 const fromCents = (value?: number | null) => ((value ?? 0) / 100).toFixed(2);
 const labelMonth = (month: string) => monthFormat.format(new Date(`${month.slice(0, 7)}-14T12:00:00`));
+const apiPrefix = window.location.pathname === "/cuentasyahorro" || window.location.pathname.startsWith("/cuentasyahorro/")
+  ? "/cuentasyahorro"
+  : "";
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
+  const response = await fetch(`${apiPrefix}${url}`, {
     credentials: "include",
     ...init,
     headers: { "content-type": "application/json", ...(init?.headers || {}) },
