@@ -2757,6 +2757,13 @@ function Stocks({
     ? dividendTotal / Math.abs(contributedTotal)
     : null;
   const missing = Object.values(state.previews).filter((item) => item.error);
+  const currentStockPrices = new Map(
+    state.items.map((item) => {
+      const price =
+        state.previews[item.id]?.quote?.priceEur ?? priceForStock(item);
+      return [item.id, price > 0 ? price : null] as const;
+    }),
+  );
   const stockRows = state.items
     .map((item, index) => {
       const info = byId.get(item.id);
@@ -3253,51 +3260,84 @@ function Stocks({
                 <th className="number">Unidades</th>
                 <th className="number">Precio</th>
                 <th className="number">Total</th>
+                <th className="number">Rentab. absoluta</th>
+                <th className="number">Rentab. %</th>
                 <th>Broker</th>
                 <th aria-label="Editar" />
               </tr>
             </thead>
             <tbody>
-              {transactions.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    {new Intl.DateTimeFormat("es-ES").format(
-                      new Date(`${item.trade_date}T12:00:00`),
-                    )}
-                  </td>
-                  <td>
-                    <strong>{item.instrument_name}</strong>
-                  </td>
-                  <td>
-                    <span
-                      className={`movement-kind kind-${item.kind.toLowerCase()}`}
+              {transactions.map((item) => {
+                const purchasePrice = item.price_minor / item.price_scale;
+                const quote = currentStockPrices.get(item.instrument_id);
+                const showsReturn =
+                  (item.kind === "A" || item.kind === "R") &&
+                  item.units > 0 &&
+                  purchasePrice > 0 &&
+                  quote != null;
+                const absoluteReturn = showsReturn
+                  ? item.units * (quote - purchasePrice)
+                  : null;
+                const percentageReturn = showsReturn
+                  ? quote / purchasePrice - 1
+                  : null;
+                const returnTone =
+                  absoluteReturn == null
+                    ? ""
+                    : absoluteReturn >= 0
+                      ? "positive"
+                      : "negative";
+                return (
+                  <tr key={item.id}>
+                    <td>
+                      {new Intl.DateTimeFormat("es-ES").format(
+                        new Date(`${item.trade_date}T12:00:00`),
+                      )}
+                    </td>
+                    <td>
+                      <strong>{item.instrument_name}</strong>
+                    </td>
+                    <td>
+                      <span
+                        className={`movement-kind kind-${item.kind.toLowerCase()}`}
+                      >
+                        {item.kind}
+                      </span>
+                    </td>
+                    <td className="number">{decimal.format(item.units)}</td>
+                    <td className="number">
+                      {euro.format(purchasePrice)}
+                    </td>
+                    <td
+                      className={`number ${item.total_cents < 0 ? "negative" : ""}`}
                     >
-                      {item.kind}
-                    </span>
-                  </td>
-                  <td className="number">{decimal.format(item.units)}</td>
-                  <td className="number">
-                    {euro.format(item.price_minor / item.price_scale)}
-                  </td>
-                  <td
-                    className={`number ${item.total_cents < 0 ? "negative" : ""}`}
-                  >
-                    {cents(item.total_cents)}
-                  </td>
-                  <td>{item.broker || "—"}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="edit-row-button"
-                      aria-label={`Editar movimiento de ${item.instrument_name}`}
-                      title="Editar movimiento"
-                      onClick={() => editMovement(item)}
-                    >
-                      ✎
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                      {cents(item.total_cents)}
+                    </td>
+                    <td className={`number ${returnTone}`}>
+                      {absoluteReturn == null
+                        ? "—"
+                        : euro.format(absoluteReturn)}
+                    </td>
+                    <td className={`number ${returnTone}`}>
+                      {percentageReturn == null
+                        ? "—"
+                        : percent.format(percentageReturn)}
+                    </td>
+                    <td>{item.broker || "—"}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="edit-row-button"
+                        aria-label={`Editar movimiento de ${item.instrument_name}`}
+                        title="Editar movimiento"
+                        onClick={() => editMovement(item)}
+                      >
+                        ✎
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
