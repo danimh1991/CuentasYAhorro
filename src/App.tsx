@@ -3270,17 +3270,17 @@ function Stocks({
               {transactions.map((item) => {
                 const purchasePrice = item.price_minor / item.price_scale;
                 const quote = currentStockPrices.get(item.instrument_id);
-                const showsReturn =
+                const showsAbsoluteReturn =
                   (item.kind === "A" || item.kind === "R") &&
                   item.units > 0 &&
-                  purchasePrice > 0 &&
                   quote != null;
-                const absoluteReturn = showsReturn
+                const absoluteReturn = showsAbsoluteReturn
                   ? item.units * (quote - purchasePrice)
                   : null;
-                const percentageReturn = showsReturn
-                  ? quote / purchasePrice - 1
-                  : null;
+                const percentageReturn =
+                  showsAbsoluteReturn && purchasePrice > 0
+                    ? quote / purchasePrice - 1
+                    : null;
                 const returnTone =
                   absoluteReturn == null
                     ? ""
