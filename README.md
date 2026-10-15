@@ -8,7 +8,7 @@ Aplicación privada para registrar cierres mensuales de cuentas, ahorro e invers
 - Histórico mensual y gráfica de patrimonio total.
 - Detalle Liberty por fondo, con unidades, ISIN/ticker, consulta de cotización y conversión a euros.
 - Fondo de pensiones HPE con aportación de empresa, aportación personal, valor actual, beneficio y rentabilidad.
-- Bolsa por posición, con unidades, coste, cotización, cambio y valor de mercado.
+- Bolsa por posición, con compras y ventas, origen o destino del dinero, efectivo disponible, cotización y rentabilidad por activo y de la cartera.
 - Apertura de un mes copiando instrumentos, identificadores, unidades y costes del cierre anterior.
 - Previsualización de precios antes de guardar. Los valores solo pasan a ser históricos al pulsar **Guardar cierre**.
 - Acceso protegido por contraseña mediante cookie segura y firmada.

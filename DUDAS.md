@@ -5,7 +5,7 @@
 - PIAS se mantiene como una única cifra mensual, editable y general.
 - Cada cierre se identifica por su mes, sin depender del día 14.
 - Liberty copia fondos y unidades del mes anterior. Sus aportaciones no intervienen en el cálculo: unidades por cotización determina el valor.
-- Bolsa incorpora el libro amarillo del Excel con `A` (compra), `D` (venta total), `R` (reinversión) y `E` (retirada para reinvertir).
+- Bolsa incorpora el libro amarillo del Excel como compras y ventas, distinguiendo si el dinero es externo o permanece dentro de la cartera; los códigos históricos `A/D/R/E` se conservan solo por compatibilidad.
 - Los cierres anteriores siguen editables, salvo la foto mensual de Bolsa una vez guardada.
 - El fondo se llama **Fondo de pensiones empresa** y admite nuevos meses y aportaciones futuras.
 - La aplicación sigue siendo personal, con un único PIN.

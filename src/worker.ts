@@ -24,6 +24,44 @@ type Quote = {
   quotedAt: string;
 };
 
+type StockSide = "buy" | "sell";
+type StockCashScope = "external" | "internal";
+
+function stockKind(side: StockSide, cashScope: StockCashScope) {
+  if (side === "buy") return cashScope === "external" ? "A" : "R";
+  return cashScope === "external" ? "D" : "E";
+}
+
+async function refreshStockSnapshots(db: D1Database) {
+  await db.prepare(
+    `UPDATE summary_snapshots
+     SET stocks_cash_cents = COALESCE((
+       SELECT SUM(CASE
+         WHEN t.kind = 'E' THEN ABS(t.total_cents)
+         WHEN t.kind = 'R' THEN -ABS(t.total_cents)
+         ELSE 0
+       END)
+       FROM stock_transactions t
+       JOIN periods selected ON selected.id = summary_snapshots.period_id
+       WHERE substr(t.trade_date, 1, 7) <= substr(selected.month, 1, 7)
+     ), 0)`,
+  ).run();
+  await db.prepare(
+    `UPDATE summary_snapshots
+     SET stocks_cents = stocks_cash_cents + COALESCE((
+       SELECT SUM(h.market_value_cents)
+       FROM holdings h JOIN instruments i ON i.id = h.instrument_id
+       WHERE h.period_id = summary_snapshots.period_id AND i.category = 'stocks'
+     ), 0)`,
+  ).run();
+  await db.prepare(
+    `UPDATE summary_snapshots SET total_cents =
+       COALESCE(current_account_cents, 0) + COALESCE(savings_account_cents, 0) + COALESCE(pias_cents, 0) +
+       COALESCE(liberty_cents, 0) + COALESCE(pension_cents, 0) + COALESCE(stocks_cents, 0),
+       updated_at = CURRENT_TIMESTAMP`,
+  ).run();
+}
+
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 const encoder = new TextEncoder();
 
@@ -412,8 +450,8 @@ app.post("/api/periods", zValidator("json", periodSchema), async (c) => {
     statements.push(
       c.env.DB.prepare(
         `INSERT INTO summary_snapshots
-          (period_id, current_account_cents, savings_account_cents, pias_cents, liberty_cents, pension_cents, stocks_cents, total_cents)
-         SELECT ?, current_account_cents, savings_account_cents, pias_cents, liberty_cents, pension_cents, stocks_cents, total_cents
+          (period_id, current_account_cents, savings_account_cents, pias_cents, liberty_cents, pension_cents, stocks_cents, stocks_cash_cents, total_cents)
+         SELECT ?, current_account_cents, savings_account_cents, pias_cents, liberty_cents, pension_cents, stocks_cents, stocks_cash_cents, total_cents
          FROM summary_snapshots WHERE period_id = ?`,
       ).bind(inserted.id, previous.id),
       c.env.DB.prepare(
@@ -496,9 +534,11 @@ app.get("/api/stocks/overview", async (c) => {
     `SELECT i.id, i.name, i.isin, i.ticker, i.reference_symbol, i.currency,
       COALESCE(h.units, 0) units, COALESCE(h.market_value_cents, 0) market_value_cents,
       h.price_eur_minor, h.quoted_at, h.is_locked,
-      COALESCE(SUM(CASE WHEN t.kind = 'A' THEN ABS(t.total_cents) ELSE 0 END), 0) total_paid_cents,
-      COALESCE(SUM(CASE WHEN t.kind = 'D' THEN ABS(t.total_cents) ELSE 0 END), 0) total_withdrawn_cents,
-      COALESCE(SUM(t.total_cents), 0) net_invested_cents,
+      COALESCE(SUM(CASE WHEN t.kind IN ('A','R') THEN ABS(t.total_cents) ELSE 0 END), 0) total_bought_cents,
+      COALESCE(SUM(CASE WHEN t.kind IN ('D','E') THEN ABS(t.total_cents) ELSE 0 END), 0) total_sold_cents,
+      COALESCE(SUM(CASE WHEN t.kind = 'A' THEN ABS(t.total_cents) ELSE 0 END), 0) external_contributed_cents,
+      COALESCE(SUM(CASE WHEN t.kind = 'D' THEN ABS(t.total_cents) ELSE 0 END), 0) external_withdrawn_cents,
+      COALESCE(SUM(CASE WHEN t.kind IN ('A','R') THEN ABS(t.total_cents) ELSE -ABS(t.total_cents) END), 0) net_invested_cents,
       (SELECT COALESCE(SUM(d.amount_eur_cents), 0) FROM stock_dividends d
        WHERE d.instrument_id=i.id AND substr(d.payment_date,1,7) <= substr(selected.month,1,7)) total_dividends_cents
      FROM instruments i
@@ -510,21 +550,26 @@ app.get("/api/stocks/overview", async (c) => {
      GROUP BY i.id, h.units, h.market_value_cents, h.price_eur_minor, h.quoted_at, h.is_locked
      ORDER BY i.sort_order, i.name`,
   ).bind(periodId, periodId).all<Record<string, unknown>>();
+  const selected = await c.env.DB.prepare(
+    `SELECT COALESCE(s.stocks_cash_cents, 0) cash_balance_cents
+     FROM summary_snapshots s WHERE s.period_id = ?`,
+  ).bind(periodId).first<{ cash_balance_cents: number }>();
   return c.json({
+    cashBalanceCents: Number(selected?.cash_balance_cents || 0),
     items: results.map((item) => {
       const marketValue = Number(item.market_value_cents || 0);
-      const paid = Number(item.total_paid_cents || 0);
-      const withdrawn = Number(item.total_withdrawn_cents || 0);
+      const bought = Number(item.total_bought_cents || 0);
+      const sold = Number(item.total_sold_cents || 0);
       const net = Number(item.net_invested_cents || 0);
       const dividends = Number(item.total_dividends_cents || 0);
       const rawUnits = Number(item.units || 0);
       const units = Math.abs(rawUnits) < 0.00000001 ? 0 : rawUnits;
-      const result = marketValue - paid + withdrawn + dividends;
+      const result = marketValue - bought + sold + dividends;
       return {
         ...item,
         result_cents: result,
-        variation: paid ? result / paid : null,
-        dividend_return: paid ? dividends / paid : null,
+        variation: bought ? result / bought : null,
+        dividend_return: bought ? dividends / bought : null,
         units,
         equilibrium_price: units ? (net / 100) / units : null,
       };
@@ -538,7 +583,10 @@ app.get("/api/stocks/transactions", async (c) => {
     ? await c.env.DB.prepare("SELECT month FROM periods WHERE id = ?").bind(Number(requested)).first<{ month: string }>()
     : null;
   const { results } = await c.env.DB.prepare(
-    `SELECT t.id, t.trade_date, t.kind, t.units, t.price_minor, t.price_scale, t.total_cents,
+    `SELECT t.id, t.trade_date, t.kind,
+      COALESCE(t.side, CASE WHEN t.kind IN ('A','R') THEN 'buy' ELSE 'sell' END) side,
+      COALESCE(t.cash_scope, CASE WHEN t.kind IN ('A','D') THEN 'external' ELSE 'internal' END) cash_scope,
+      t.units, t.price_minor, t.price_scale, t.total_cents,
       t.currency, t.fx_to_eur, t.broker, t.source, i.id instrument_id, i.name instrument_name
      FROM stock_transactions t JOIN instruments i ON i.id = t.instrument_id
      WHERE (? IS NULL OR substr(t.trade_date, 1, 7) <= substr(?, 1, 7))
@@ -550,7 +598,8 @@ app.get("/api/stocks/transactions", async (c) => {
 const transactionSchema = z.object({
   tradeDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   instrumentId: z.number().int(),
-  kind: z.enum(["A", "D", "R", "E"]),
+  side: z.enum(["buy", "sell"]),
+  cashScope: z.enum(["external", "internal"]),
   units: z.number().positive(),
   price: z.number().nonnegative(),
   broker: z.string().trim().max(80).nullable().optional(),
@@ -562,17 +611,19 @@ app.post("/api/stocks/transactions", zValidator("json", transactionSchema), asyn
   const instrument = await c.env.DB.prepare("SELECT id FROM instruments WHERE id = ? AND category = 'stocks'")
     .bind(item.instrumentId).first();
   if (!instrument) return c.json({ error: "Activo no encontrado" }, 404);
-  const sign = item.kind === "D" || item.kind === "E" ? -1 : 1;
+  const kind = stockKind(item.side, item.cashScope);
+  const sign = item.side === "sell" ? -1 : 1;
   const units = Math.abs(item.units) * sign;
   const totalCents = Math.round(units * item.price * 100);
   const inserted = await c.env.DB.prepare(
     `INSERT INTO stock_transactions
-      (trade_date, instrument_id, kind, units, price_minor, price_scale, total_cents, currency, broker, source)
-     VALUES (?, ?, ?, ?, ?, 10000, ?, ?, ?, 'manual') RETURNING id`,
+      (trade_date, instrument_id, kind, side, cash_scope, units, price_minor, price_scale, total_cents, currency, broker, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 10000, ?, ?, ?, 'manual') RETURNING id`,
   ).bind(
-    item.tradeDate, item.instrumentId, item.kind, units, Math.round(item.price * 10000),
+    item.tradeDate, item.instrumentId, kind, item.side, item.cashScope, units, Math.round(item.price * 10000),
     totalCents, item.currency, item.broker || null,
   ).first<{ id: number }>();
+  await refreshStockSnapshots(c.env.DB);
   return c.json(inserted, 201);
 });
 
@@ -585,16 +636,18 @@ app.put("/api/stocks/transactions/:id", zValidator("json", transactionSchema), a
   const existing = await c.env.DB.prepare("SELECT id FROM stock_transactions WHERE id = ?")
     .bind(id).first();
   if (!existing) return c.json({ error: "Movimiento no encontrado" }, 404);
-  const sign = item.kind === "D" || item.kind === "E" ? -1 : 1;
+  const kind = stockKind(item.side, item.cashScope);
+  const sign = item.side === "sell" ? -1 : 1;
   const units = Math.abs(item.units) * sign;
   const totalCents = Math.round(units * item.price * 100);
   await c.env.DB.prepare(
-    `UPDATE stock_transactions SET trade_date=?, instrument_id=?, kind=?, units=?, price_minor=?,
+    `UPDATE stock_transactions SET trade_date=?, instrument_id=?, kind=?, side=?, cash_scope=?, units=?, price_minor=?,
       price_scale=10000, total_cents=?, currency=?, broker=?, source='manual' WHERE id=?`,
   ).bind(
-    item.tradeDate, item.instrumentId, item.kind, units, Math.round(item.price * 10000),
+    item.tradeDate, item.instrumentId, kind, item.side, item.cashScope, units, Math.round(item.price * 10000),
     totalCents, item.currency, item.broker || null, id,
   ).run();
+  await refreshStockSnapshots(c.env.DB);
   return c.json({ ok: true });
 });
 
@@ -775,6 +828,12 @@ app.put(
     const allowed = await c.env.DB.prepare("SELECT id FROM instruments WHERE category = ?").bind(category).all<{ id: number }>();
     const ids = new Set(allowed.results.map((item) => item.id));
     if (items.some((item) => !ids.has(item.instrumentId))) return c.json({ error: "Instrumento fuera de categoría" }, 400);
+    if (category === "stocks") {
+      await c.env.DB.prepare(
+        `UPDATE holdings SET units = 0, market_value_cents = 0, updated_at = CURRENT_TIMESTAMP
+         WHERE period_id = ? AND instrument_id IN (SELECT id FROM instruments WHERE category = 'stocks')`,
+      ).bind(periodId).run();
+    }
     const statements = items.map((item) => {
       const marketValueCents = Math.round(item.units * item.priceEur * 100);
       return c.env.DB.prepare(
@@ -801,11 +860,17 @@ app.put(
       `SELECT COALESCE(SUM(h.market_value_cents), 0) total FROM holdings h
        JOIN instruments i ON i.id = h.instrument_id WHERE h.period_id = ? AND i.category = ?`,
     ).bind(periodId, category).first<{ total: number }>();
-    const column = category === "liberty" ? "liberty_cents" : "stocks_cents";
-    await c.env.DB.prepare(`UPDATE summary_snapshots SET ${column} = ?, updated_at = CURRENT_TIMESTAMP WHERE period_id = ?`)
-      .bind(total?.total ?? 0, periodId).run();
-    await recomputeSummary(c.env.DB, periodId);
-    return c.json({ ok: true, totalCents: total?.total ?? 0 });
+    if (category === "stocks") {
+      await refreshStockSnapshots(c.env.DB);
+    } else {
+      await c.env.DB.prepare("UPDATE summary_snapshots SET liberty_cents = ?, updated_at = CURRENT_TIMESTAMP WHERE period_id = ?")
+        .bind(total?.total ?? 0, periodId).run();
+      await recomputeSummary(c.env.DB, periodId);
+    }
+    const savedTotal = category === "stocks"
+      ? await c.env.DB.prepare("SELECT stocks_cents total FROM summary_snapshots WHERE period_id = ?").bind(periodId).first<{ total: number }>()
+      : total;
+    return c.json({ ok: true, totalCents: savedTotal?.total ?? 0 });
   },
 );
 

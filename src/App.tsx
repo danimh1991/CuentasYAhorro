@@ -83,8 +83,10 @@ type StockReturnPoint = {
   return_rate: number | null;
 };
 type StockOverview = Instrument & {
-  total_paid_cents: number;
-  total_withdrawn_cents: number;
+  total_bought_cents: number;
+  total_sold_cents: number;
+  external_contributed_cents: number;
+  external_withdrawn_cents: number;
   total_dividends_cents: number;
   net_invested_cents: number;
   result_cents: number;
@@ -96,6 +98,8 @@ type StockTransaction = {
   id: number;
   trade_date: string;
   kind: "A" | "D" | "R" | "E";
+  side: "buy" | "sell";
+  cash_scope: "external" | "internal";
   units: number;
   price_minor: number;
   price_scale: number;
@@ -2343,7 +2347,7 @@ function ReturnHistory({
       <p className="return-formula">
         {category === "liberty"
           ? "Valor de Liberty menos las aportaciones acumuladas desde mayo de 2015."
-          : "Valor de mercado + ventas retiradas + dividendos − compras aportadas. Las reinversiones y retiradas para reinvertir no cuentan como entradas o salidas externas."}
+          : "Posiciones + efectivo en Bolsa + ventas retiradas + dividendos − dinero nuevo aportado. Las operaciones internas cambian entre activos y efectivo, pero no son entradas ni salidas de la cartera."}
       </p>
       {category === "liberty" && (
         <label className="zero-toggle">
@@ -2472,8 +2476,8 @@ function StockBreakdown({
       name: item.name,
       result: Number(item.result_cents || 0),
       activity:
-        Number(item.total_paid_cents || 0) +
-        Number(item.total_withdrawn_cents || 0) +
+        Number(item.total_bought_cents || 0) +
+        Number(item.total_sold_cents || 0) +
         Number(item.total_dividends_cents || 0),
     }))
     .filter((item) => item.activity > 0)
@@ -2544,6 +2548,7 @@ function Stocks({
 }) {
   const state = usePortfolio("stocks", period.id);
   const [overview, setOverview] = useState<StockOverview[]>([]);
+  const [cashBalanceCents, setCashBalanceCents] = useState(0);
   const [transactions, setTransactions] = useState<StockTransaction[]>([]);
   const [dividends, setDividends] = useState<Dividend[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -2557,7 +2562,8 @@ function Stocks({
   const [movement, setMovement] = useState({
     tradeDate: new Date().toISOString().slice(0, 10),
     instrumentId: "",
-    kind: "A",
+    side: "buy" as "buy" | "sell",
+    cashScope: "external" as "external" | "internal",
     units: "",
     price: "",
     broker: "",
@@ -2572,7 +2578,7 @@ function Stocks({
   });
   const loadDetail = useCallback(async () => {
     const [summary, ledger, income] = await Promise.all([
-      api<{ items: StockOverview[] }>(
+      api<{ items: StockOverview[]; cashBalanceCents: number }>(
         `/api/stocks/overview?periodId=${period.id}`,
       ),
       api<{ transactions: StockTransaction[] }>(
@@ -2583,6 +2589,7 @@ function Stocks({
       ),
     ]);
     setOverview(summary.items);
+    setCashBalanceCents(summary.cashBalanceCents);
     setTransactions(ledger.transactions);
     setDividends(income.dividends);
   }, [period.id]);
@@ -2596,11 +2603,12 @@ function Stocks({
     if (locked) return saved;
     return quoteFor(item, state.previews, state.manual)?.priceEur ?? saved;
   };
-  const total = state.items.reduce(
+  const positionsTotal = state.items.reduce(
     (sum, item) =>
       sum + Number(item.units || 0) * priceForStock(item),
     0,
   );
+  const total = positionsTotal + cashBalanceCents / 100;
   const save = async () => {
     if (locked)
       return state.setMessage(
@@ -2661,7 +2669,8 @@ function Stocks({
       body: JSON.stringify({
         tradeDate: movement.tradeDate,
         instrumentId: Number(movement.instrumentId),
-        kind: movement.kind,
+        side: movement.side,
+        cashScope: movement.cashScope,
         units: Number(movement.units.replace(",", ".")),
         price: Number(movement.price.replace(",", ".")),
         broker: movement.broker || null,
@@ -2671,7 +2680,7 @@ function Stocks({
     setMovement({ ...movement, units: "", price: "" });
     setEditingMovementId(null);
     setShowForm(false);
-    await loadDetail();
+    await Promise.all([state.load(), loadDetail(), onRefresh()]);
   };
   const revealForm = (id: string) =>
     requestAnimationFrame(() =>
@@ -2685,7 +2694,8 @@ function Stocks({
     setMovement({
       tradeDate: new Date().toISOString().slice(0, 10),
       instrumentId: "",
-      kind: "A",
+      side: "buy",
+      cashScope: "external",
       units: "",
       price: "",
       broker: "",
@@ -2699,7 +2709,8 @@ function Stocks({
     setMovement({
       tradeDate: item.trade_date,
       instrumentId: String(item.instrument_id),
-      kind: item.kind,
+      side: item.side,
+      cashScope: item.cash_scope,
       units: String(Math.abs(item.units)),
       price: String(item.price_minor / item.price_scale),
       broker: item.broker || "",
@@ -2737,11 +2748,11 @@ function Stocks({
   };
   const byId = new Map(overview.map((item) => [item.id, item]));
   const contributedTotal = overview.reduce(
-    (sum, item) => sum + Number(item.total_paid_cents || 0),
+    (sum, item) => sum + Number(item.external_contributed_cents || 0),
     0,
   );
   const withdrawnTotal = overview.reduce(
-    (sum, item) => sum + Number(item.total_withdrawn_cents || 0),
+    (sum, item) => sum + Number(item.external_withdrawn_cents || 0),
     0,
   );
   const dividendTotal = overview.reduce(
@@ -2772,8 +2783,8 @@ function Stocks({
       const value = Number(item.units || 0) * price;
       const result =
         value * 100 -
-        Number(info?.total_paid_cents || 0) +
-        Number(info?.total_withdrawn_cents || 0) +
+        Number(info?.total_bought_cents || 0) +
+        Number(info?.total_sold_cents || 0) +
         Number(info?.total_dividends_cents || 0);
       const net = Number(info?.net_invested_cents || 0);
       const status = state.previews[item.id]?.quote
@@ -2793,12 +2804,12 @@ function Stocks({
         value,
         weight: total ? value / total : 0,
         net,
-        paid: Number(info?.total_paid_cents || 0),
-        withdrawn: Number(info?.total_withdrawn_cents || 0),
+        paid: Number(info?.total_bought_cents || 0),
+        withdrawn: Number(info?.total_sold_cents || 0),
         dividends: Number(info?.total_dividends_cents || 0),
         result,
-        variation: Number(info?.total_paid_cents || 0)
-          ? result / Math.abs(Number(info?.total_paid_cents || 0))
+        variation: Number(info?.total_bought_cents || 0)
+          ? result / Math.abs(Number(info?.total_bought_cents || 0))
           : 0,
         status,
       };
@@ -2895,9 +2906,14 @@ function Stocks({
       )}
       <section className="metric-grid stock-kpis">
         <Metric
-          label="Valor de mercado"
-          value={Math.round(total * 100)}
+          label="Valor posiciones"
+          value={Math.round(positionsTotal * 100)}
           tone="green"
+        />
+        <Metric
+          label="Efectivo en Bolsa"
+          value={cashBalanceCents}
+          tone={cashBalanceCents >= 0 ? "gold" : "coral"}
         />
         <Metric label="Total aportado" value={contributedTotal} tone="blue" />
         <Metric label="Total retirado" value={withdrawnTotal} tone="gold" />
@@ -2910,7 +2926,7 @@ function Stocks({
         <div className="metric violet">
           <span>Rentabilidad total</span>
           <strong>{totalReturn == null ? "—" : percent.format(totalReturn)}</strong>
-          <small>R, E excluidas · incluye dividendos</small>
+          <small>Solo flujos externos · incluye efectivo y dividendos</small>
         </div>
         <div className="metric gold">
           <span>Rentabilidad dividendos</span>
@@ -2924,7 +2940,7 @@ function Stocks({
       {showForm && (
         <form
           id="stock-movement-form"
-          className="panel movement-form"
+          className="panel movement-form stock-movement-form"
           onSubmit={addMovement}
         >
           <div>
@@ -2960,17 +2976,42 @@ function Stocks({
             </select>
           </label>
           <label>
-            Tipo
+            Operación
             <select
-              value={movement.kind}
+              value={movement.side}
               onChange={(event) =>
-                setMovement({ ...movement, kind: event.target.value })
+                setMovement({
+                  ...movement,
+                  side: event.target.value as "buy" | "sell",
+                })
               }
             >
-              <option value="A">A · Compra</option>
-              <option value="D">D · Venta total</option>
-              <option value="R">R · Reinversión</option>
-              <option value="E">E · Retira para reinvertir</option>
+              <option value="buy">Compra</option>
+              <option value="sell">Venta</option>
+            </select>
+          </label>
+          <label>
+            {movement.side === "buy" ? "Origen del dinero" : "Destino del dinero"}
+            <select
+              value={movement.cashScope}
+              onChange={(event) =>
+                setMovement({
+                  ...movement,
+                  cashScope: event.target.value as "external" | "internal",
+                })
+              }
+            >
+              {movement.side === "buy" ? (
+                <>
+                  <option value="external">Dinero nuevo</option>
+                  <option value="internal">Saldo de la cartera</option>
+                </>
+              ) : (
+                <>
+                  <option value="internal">Mantener en la cartera</option>
+                  <option value="external">Retirar de Bolsa</option>
+                </>
+              )}
             </select>
           </label>
           <label>
@@ -3114,8 +3155,8 @@ function Stocks({
                 {sortableHeader("Valor posición", "value", true)}
                 {sortableHeader("Peso cartera", "weight", true)}
                 {sortableHeader("Invertido neto", "net", true)}
-                {sortableHeader("Aportado", "paid", true)}
-                {sortableHeader("Retirado", "withdrawn", true)}
+                {sortableHeader("Compras", "paid", true)}
+                {sortableHeader("Ventas", "withdrawn", true)}
                 {sortableHeader("Dividendos", "dividends", true)}
                 {sortableHeader("Resultado", "result", true)}
                 {sortableHeader("Variación", "variation", true)}
@@ -3128,9 +3169,7 @@ function Stocks({
                 return (
                   <tr
                     key={item.id}
-                    className={
-                      !item.units && !info?.total_paid_cents ? "muted-row" : ""
-                    }
+                    className={!item.units && !info?.total_bought_cents ? "muted-row" : ""}
                   >
                     <td>
                       <strong>{item.name}</strong>
@@ -3185,9 +3224,9 @@ function Stocks({
                       {total ? percent.format(value / total) : "—"}
                     </td>
                     <td className="number">{cents(net)}</td>
-                    <td className="number">{cents(info?.total_paid_cents)}</td>
+                    <td className="number">{cents(info?.total_bought_cents)}</td>
                     <td className="number">
-                      {cents(info?.total_withdrawn_cents)}
+                      {cents(info?.total_sold_cents)}
                     </td>
                     <td className="number">
                       {cents(info?.total_dividends_cents)}
@@ -3200,9 +3239,9 @@ function Stocks({
                     <td
                       className={`number ${result >= 0 ? "positive" : "negative"}`}
                     >
-                      {info?.total_paid_cents
+                      {info?.total_bought_cents
                         ? percent.format(
-                            result / Math.abs(info.total_paid_cents),
+                            result / Math.abs(info.total_bought_cents),
                           )
                         : "—"}
                     </td>
@@ -3221,7 +3260,7 @@ function Stocks({
           </table>
         </div>
         <div className="table-total">
-          <span>Total Bolsa</span>
+          <span>Posiciones {euro.format(positionsTotal)} + efectivo {cents(cashBalanceCents)}</span>
           <strong>{euro.format(total)}</strong>
         </div>
       </section>
@@ -3230,25 +3269,15 @@ function Stocks({
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Histórico</p>
-            <h3>Movimientos A / D / R / E</h3>
+            <h3>Compras y ventas</h3>
           </div>
           <span>
             {transactions.length} operaciones hasta {labelMonth(period.month)}
           </span>
         </div>
         <div className="type-legend">
-          <span>
-            <b>A</b> Compra
-          </span>
-          <span>
-            <b>D</b> Venta total
-          </span>
-          <span>
-            <b>R</b> Reinversión
-          </span>
-          <span>
-            <b>E</b> Retira para reinvertir
-          </span>
+          <span>Las compras indican si usan dinero nuevo o saldo de la cartera.</span>
+          <span>Las ventas indican si el dinero se retira o permanece en Bolsa.</span>
         </div>
         <div className="table-scroll ledger-scroll">
           <table>
@@ -3256,7 +3285,8 @@ function Stocks({
               <tr>
                 <th>Fecha</th>
                 <th>Activo</th>
-                <th>Tipo</th>
+                <th>Operación</th>
+                <th>Dinero</th>
                 <th className="number">Unidades</th>
                 <th className="number">Precio</th>
                 <th className="number">Total</th>
@@ -3301,8 +3331,17 @@ function Stocks({
                       <span
                         className={`movement-kind kind-${item.kind.toLowerCase()}`}
                       >
-                        {item.kind}
+                        {item.side === "buy" ? "Compra" : "Venta"}
                       </span>
+                    </td>
+                    <td>
+                      {item.side === "buy"
+                        ? item.cash_scope === "external"
+                          ? "Dinero nuevo"
+                          : "Saldo cartera"
+                        : item.cash_scope === "external"
+                          ? "Retirado"
+                          : "Permanece en cartera"}
                     </td>
                     <td className="number">{decimal.format(item.units)}</td>
                     <td className="number">

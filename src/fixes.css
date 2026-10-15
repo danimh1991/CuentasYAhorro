@@ -183,6 +183,10 @@ main {
   margin-bottom: 18px;
 }
 
+.stock-movement-form {
+  grid-template-columns: 1.15fr repeat(7, minmax(105px, 1fr)) auto;
+}
+
 .movement-form h3 {
   margin: 0;
   font: 700 18px Manrope;
@@ -230,6 +234,7 @@ main {
   border-radius: 7px;
   margin-right: 4px;
   font-size: 11px;
+  padding: 0 8px;
 }
 
 .edit-row-button {
@@ -270,6 +275,10 @@ main {
 .liberty-metrics,
 .stock-kpis {
   grid-template-columns: repeat(5, 1fr);
+}
+
+.stock-kpis {
+  grid-template-columns: repeat(4, 1fr);
 }
 
 .modal-backdrop {
