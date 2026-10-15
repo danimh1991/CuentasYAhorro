@@ -250,6 +250,30 @@ main {
 }
 .edit-row-button:hover { background: #eaf5f0; }
 
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.delete-row-button {
+  color: #a54c40;
+}
+
+.delete-row-button:hover {
+  background: #fee9e4;
+}
+
+.nav-item span {
+  display: grid;
+  place-items: center;
+}
+
+.nav-item svg {
+  width: 19px;
+  height: 19px;
+}
+
 .kind-a,
 .type-legend span:nth-child(1) b { background: #ddf5eb; color: #187257; }
 .kind-d,

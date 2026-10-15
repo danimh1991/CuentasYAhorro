@@ -230,8 +230,8 @@ const titles: Record<View, string> = {
   overview: "Resumen general",
   variation: "Variación",
   savings: "Ahorro",
-  liberty: "Detalle Liberty",
-  pension: "Fondo de pensiones empresa",
+  liberty: "Fondo personal",
+  pension: "Fondo empresa",
   stocks: "Bolsa",
   markets: "Mercados",
 };
@@ -334,56 +334,56 @@ function App() {
           <NavItem
             active={view === "summary"}
             onClick={() => setView("summary")}
-            icon="⌂"
+            icon="home"
           >
             Resumen actual
           </NavItem>
           <NavItem
             active={view === "overview"}
             onClick={() => setView("overview")}
-            icon="▦"
+            icon="overview"
           >
             Resumen general
           </NavItem>
           <NavItem
             active={view === "variation"}
             onClick={() => setView("variation")}
-            icon="±"
+            icon="variation"
           >
             Variación
           </NavItem>
           <NavItem
             active={view === "savings"}
             onClick={() => setView("savings")}
-            icon="◫"
+            icon="savings"
           >
             Ahorro
           </NavItem>
           <NavItem
             active={view === "liberty"}
             onClick={() => setView("liberty")}
-            icon="◇"
+            icon="personal"
           >
-            Liberty
+            Fondo personal
           </NavItem>
           <NavItem
             active={view === "pension"}
             onClick={() => setView("pension")}
-            icon="◎"
+            icon="company"
           >
-            Fondo pensiones
+            Fondo empresa
           </NavItem>
           <NavItem
             active={view === "stocks"}
             onClick={() => setView("stocks")}
-            icon="↗"
+            icon="stocks"
           >
             Bolsa
           </NavItem>
           <NavItem
             active={view === "markets"}
             onClick={() => setView("markets")}
-            icon="◉"
+            icon="markets"
           >
             Mercados
           </NavItem>
@@ -453,6 +453,34 @@ function App() {
   );
 }
 
+type NavIconName =
+  | "home"
+  | "overview"
+  | "variation"
+  | "savings"
+  | "personal"
+  | "company"
+  | "stocks"
+  | "markets";
+
+function NavIcon({ name }: { name: NavIconName }) {
+  const paths: Record<NavIconName, React.ReactNode> = {
+    home: <><path d="M3 11.5 12 4l9 7.5" /><path d="M5.5 10v10h13V10M9 20v-6h6v6" /></>,
+    overview: <><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><rect x="14" y="14" width="6" height="6" rx="1" /></>,
+    variation: <><path d="M4 18 9 12l4 3 7-9" /><path d="M15 6h5v5" /></>,
+    savings: <><path d="M4 7.5h15a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h12" /><path d="M16 13h5M17.5 13h.01" /></>,
+    personal: <><circle cx="12" cy="8" r="3.5" /><path d="M5 20c.8-4 3.1-6 7-6s6.2 2 7 6" /></>,
+    company: <><path d="M4 20V7h10v13M14 11h6v9M8 11h2M8 15h2M8 19h2M17 15h1M17 18h1" /></>,
+    stocks: <><path d="M5 5v5M5 14v5M3 10h4v4H3zM12 3v4M12 11v10M10 7h4v4h-4zM19 5v8M19 17v3M17 13h4v4h-4z" /></>,
+    markets: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9S14.5 18.4 12 21M12 3C9.5 5.6 8.2 8.6 8.2 12S9.5 18.4 12 21" /></>,
+  };
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {paths[name]}
+    </svg>
+  );
+}
+
 function NavItem({
   active,
   onClick,
@@ -461,12 +489,12 @@ function NavItem({
 }: {
   active: boolean;
   onClick: () => void;
-  icon: string;
+  icon: NavIconName;
   children: React.ReactNode;
 }) {
   return (
     <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick}>
-      <span>{icon}</span>
+      <span><NavIcon name={icon} /></span>
       {children}
     </button>
   );
@@ -551,8 +579,8 @@ const columns = [
   ["Cuenta corriente", "current_account_cents"],
   ["Cuenta ahorro", "savings_account_cents"],
   ["Ahorro", "pias_cents"],
-  ["Liberty", "liberty_cents"],
-  ["Fondo pensiones", "pension_cents"],
+  ["Fondo personal", "liberty_cents"],
+  ["Fondo empresa", "pension_cents"],
   ["Bolsa", "stocks_cents"],
   ["Total", "total_cents"],
 ] as const;
@@ -758,9 +786,9 @@ function Summary({
           onChange={(value) => setForm({ ...form, pias: value })}
           tone="gold"
         />
-        <Metric label="Liberty" value={period.liberty_cents} tone="violet" />
+        <Metric label="Fondo personal" value={period.liberty_cents} tone="violet" />
         <Metric
-          label="Fondo pensiones empresa"
+          label="Fondo empresa"
           value={period.pension_cents}
           tone="coral"
         />
@@ -1342,7 +1370,7 @@ function Liberty({
         }),
       });
       await Promise.all([state.load(), onRefresh()]);
-      state.setMessage("Liberty guardado para este mes.");
+      state.setMessage("Fondo personal guardado para este mes.");
     } catch (cause) {
       state.setMessage(
         cause instanceof Error ? cause.message : "No se pudo guardar",
@@ -1358,7 +1386,7 @@ function Liberty({
         <div>
           <p className="eyebrow">{labelMonth(period.month)}</p>
           <h2>{euro.format(total)}</h2>
-          <p>Valor total de Liberty</p>
+          <p>Valor total del fondo personal</p>
         </div>
         <div className="action-row">
           <button className="button secondary" onClick={() => setEditing(true)}>
@@ -1421,7 +1449,7 @@ function Liberty({
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Posiciones</p>
-            <h3>Fondos Liberty</h3>
+            <h3>Fondos personales</h3>
           </div>
           <span>
             Escribe unidades o valor total; con el precio unitario se calcula el
@@ -1437,7 +1465,7 @@ function Liberty({
                 <th className="number">Unidades</th>
                 <th className="number">Precio unitario EUR</th>
                 <th className="number">Valor del fondo</th>
-                <th className="number">Peso en Liberty</th>
+                <th className="number">Peso en el fondo</th>
                 <th>Consulta</th>
               </tr>
             </thead>
@@ -1534,7 +1562,7 @@ function Liberty({
           </table>
         </div>
         <div className="table-total">
-          <span>Total Liberty</span>
+          <span>Total fondo personal</span>
           <strong>{euro.format(total)}</strong>
         </div>
       </section>
@@ -2210,7 +2238,7 @@ function Pension({
       </section>
       <section className="panel table-panel pension-history-table">
         <div className="panel-heading">
-          <div><p className="eyebrow">Detalle mensual</p><h3>Histórico del fondo de pensiones</h3></div>
+          <div><p className="eyebrow">Detalle mensual</p><h3>Histórico del fondo empresa</h3></div>
           <span>{history.length} meses</span>
         </div>
         <div className="table-scroll">
@@ -2222,7 +2250,7 @@ function Pension({
       </section>
       <HistoryPanel
         category="pension"
-        title="Evolución del fondo de pensiones"
+        title="Evolución del fondo empresa"
       />
     </>
   );
@@ -2260,9 +2288,11 @@ function HistoryPanel({
 function ReturnHistory({
   periodId,
   category,
+  refreshKey = 0,
 }: {
   periodId: number;
   category: "liberty" | "stocks";
+  refreshKey?: number;
 }) {
   const [points, setPoints] = useState<StockReturnPoint[]>([]);
   const [mode, setMode] = useState<"amount" | "percent">("amount");
@@ -2280,7 +2310,7 @@ function ReturnHistory({
       );
       setHovered(null);
     });
-  }, [category, periodId]);
+  }, [category, periodId, refreshKey]);
   const visibleCount = Math.min(zoomMonths, points.length);
   const recent = points.slice(-visibleCount);
   const values = recent.map((point) =>
@@ -2319,7 +2349,7 @@ function ReturnHistory({
     yTicks.push({ value: 0, y: zeroY });
     yTicks.sort((left, right) => left.y - right.y);
   }
-  const title = category === "liberty" ? "Resultado total de Liberty" : "Resultado total de Bolsa";
+  const title = category === "liberty" ? "Resultado total del fondo personal" : "Resultado total de Bolsa";
   return (
     <section className="panel history-panel return-history-panel">
       <div className="panel-heading">
@@ -2346,7 +2376,7 @@ function ReturnHistory({
       </div>
       <p className="return-formula">
         {category === "liberty"
-          ? "Valor de Liberty menos las aportaciones acumuladas desde mayo de 2015."
+          ? "Valor del fondo personal menos las aportaciones acumuladas desde mayo de 2015."
           : "Posiciones + efectivo en Bolsa + ventas retiradas + dividendos − dinero nuevo aportado. Las operaciones internas cambian entre activos y efectivo, pero no son entradas ni salidas de la cartera."}
       </p>
       {category === "liberty" && (
@@ -2554,6 +2584,8 @@ function Stocks({
   const [showForm, setShowForm] = useState(false);
   const [showDividend, setShowDividend] = useState(false);
   const [editingMovementId, setEditingMovementId] = useState<number | null>(null);
+  const [editingDividendId, setEditingDividendId] = useState<number | null>(null);
+  const [returnRefresh, setReturnRefresh] = useState(0);
   const [editing, setEditing] = useState(false);
   const [stockSort, setStockSort] = useState<{
     key: StockSortKey;
@@ -2649,6 +2681,7 @@ function Stocks({
         }),
       });
       await Promise.all([state.load(), loadDetail(), onRefresh()]);
+      setReturnRefresh((value) => value + 1);
       state.setMessage("Cierre de Bolsa guardado y bloqueado.");
     } catch (cause) {
       state.setMessage(
@@ -2681,6 +2714,7 @@ function Stocks({
     setEditingMovementId(null);
     setShowForm(false);
     await Promise.all([state.load(), loadDetail(), onRefresh()]);
+    setReturnRefresh((value) => value + 1);
   };
   const revealForm = (id: string) =>
     requestAnimationFrame(() =>
@@ -2722,13 +2756,44 @@ function Stocks({
   const openDividend = () => {
     setShowForm(false);
     setEditingMovementId(null);
+    setEditingDividendId(null);
+    setDividend({
+      paymentDate: new Date().toISOString().slice(0, 10),
+      instrumentId: "",
+      perShare: "",
+      amount: "",
+      currency: "EUR",
+      fxToEur: "",
+    });
     setShowDividend(true);
     revealForm("stock-dividend-form");
   };
-  const addDividend = async (event: FormEvent) => {
+  const editDividend = (item: Dividend) => {
+    setShowForm(false);
+    setEditingMovementId(null);
+    setEditingDividendId(item.id);
+    setDividend({
+      paymentDate: item.payment_date,
+      instrumentId: String(item.instrument_id),
+      perShare:
+        item.per_share_minor != null && item.per_share_scale
+          ? String(item.per_share_minor / item.per_share_scale)
+          : "",
+      amount: String(item.gross_minor / item.amount_scale),
+      currency: item.currency,
+      fxToEur: item.currency === "EUR" ? "" : String(item.fx_to_eur),
+    });
+    setShowDividend(true);
+    revealForm("stock-dividend-form");
+  };
+  const saveDividend = async (event: FormEvent) => {
     event.preventDefault();
-    await api("/api/stocks/dividends", {
-      method: "POST",
+    await api(
+      editingDividendId
+        ? `/api/stocks/dividends/${editingDividendId}`
+        : "/api/stocks/dividends",
+      {
+      method: editingDividendId ? "PUT" : "POST",
       body: JSON.stringify({
         paymentDate: dividend.paymentDate,
         instrumentId: Number(dividend.instrumentId),
@@ -2743,8 +2808,20 @@ function Stocks({
       }),
     });
     setDividend({ ...dividend, perShare: "", amount: "" });
+    setEditingDividendId(null);
     setShowDividend(false);
-    await loadDetail();
+    await Promise.all([loadDetail(), onRefresh()]);
+    setReturnRefresh((value) => value + 1);
+  };
+  const deleteDividend = async (item: Dividend) => {
+    if (!window.confirm(`¿Eliminar el dividendo de ${item.instrument_name} del ${item.payment_date}?`)) return;
+    await api(`/api/stocks/dividends/${item.id}`, { method: "DELETE" });
+    if (editingDividendId === item.id) {
+      setEditingDividendId(null);
+      setShowDividend(false);
+    }
+    await Promise.all([loadDetail(), onRefresh()]);
+    setReturnRefresh((value) => value + 1);
   };
   const byId = new Map(overview.map((item) => [item.id, item]));
   const contributedTotal = overview.reduce(
@@ -3054,11 +3131,11 @@ function Stocks({
         <form
           id="stock-dividend-form"
           className="panel movement-form dividend-form"
-          onSubmit={addDividend}
+          onSubmit={saveDividend}
         >
           <div>
             <p className="eyebrow">Rendimientos</p>
-            <h3>Nuevo dividendo</h3>
+            <h3>{editingDividendId ? "Editar dividendo" : "Nuevo dividendo"}</h3>
           </div>
           <label>
             Fecha
@@ -3133,7 +3210,9 @@ function Stocks({
               }
             />
           </label>
-          <button className="button primary">Guardar dividendo</button>
+          <button className="button primary">
+            {editingDividendId ? "Guardar cambios" : "Guardar dividendo"}
+          </button>
         </form>
       )}
       <section className="panel table-panel stocks-summary">
@@ -3249,7 +3328,7 @@ function Stocks({
           <strong>{euro.format(total)}</strong>
         </div>
       </section>
-      <ReturnHistory category="stocks" periodId={period.id} />
+      <ReturnHistory category="stocks" periodId={period.id} refreshKey={returnRefresh} />
       <section className="panel table-panel ledger-panel">
         <div className="panel-heading">
           <div>
@@ -3385,6 +3464,7 @@ function Stocks({
                 <th className="number">Invertido al pago</th>
                 <th className="number">Rentabilidad</th>
                 <th>Divisa / cambio</th>
+                <th aria-label="Acciones" />
               </tr>
             </thead>
             <tbody>
@@ -3426,11 +3506,33 @@ function Stocks({
                         ? ` · ${decimal.format(item.fx_to_eur)}`
                         : ""}
                     </td>
+                    <td>
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          className="edit-row-button"
+                          aria-label={`Editar dividendo de ${item.instrument_name}`}
+                          title="Editar dividendo"
+                          onClick={() => editDividend(item)}
+                        >
+                          ✎
+                        </button>
+                        <button
+                          type="button"
+                          className="edit-row-button delete-row-button"
+                          aria-label={`Eliminar dividendo de ${item.instrument_name}`}
+                          title="Eliminar dividendo"
+                          onClick={() => void deleteDividend(item)}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="empty-table">
+                  <td colSpan={8} className="empty-table">
                     Añade el primer dividendo con el botón superior.
                   </td>
                 </tr>
