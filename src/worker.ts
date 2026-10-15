@@ -34,6 +34,25 @@ function stockKind(side: StockSide, cashScope: StockCashScope) {
 
 async function refreshStockSnapshots(db: D1Database) {
   await db.prepare(
+    `UPDATE holdings
+     SET units = COALESCE((
+           SELECT SUM(t.units) FROM stock_transactions t
+           JOIN periods selected ON selected.id = holdings.period_id
+           WHERE t.instrument_id = holdings.instrument_id
+             AND substr(t.trade_date, 1, 7) <= substr(selected.month, 1, 7)
+         ), 0),
+         market_value_cents = ROUND(
+           COALESCE((
+             SELECT SUM(t.units) FROM stock_transactions t
+             JOIN periods selected ON selected.id = holdings.period_id
+             WHERE t.instrument_id = holdings.instrument_id
+               AND substr(t.trade_date, 1, 7) <= substr(selected.month, 1, 7)
+           ), 0) * COALESCE(price_eur_minor, 0) / 100.0
+         ),
+         updated_at = CURRENT_TIMESTAMP
+     WHERE instrument_id IN (SELECT id FROM instruments WHERE category = 'stocks')`,
+  ).run();
+  await db.prepare(
     `UPDATE summary_snapshots
      SET stocks_cash_cents = COALESCE((
        SELECT SUM(CASE
@@ -513,14 +532,21 @@ app.get("/api/portfolio/:category", async (c) => {
   if (!period) return c.json({ period: null, instruments: [] });
   const periodId = Number(period.id);
   const { results } = await c.env.DB.prepare(
-    `SELECT i.*, h.units, h.average_cost_cents, h.invested_cents, h.withdrawn_cents,
+    `SELECT i.*,
+      CASE WHEN i.category = 'stocks' THEN COALESCE((
+        SELECT SUM(t.units) FROM stock_transactions t
+        WHERE t.instrument_id = i.id
+          AND substr(t.trade_date, 1, 7) <= substr(selected.month, 1, 7)
+      ), 0) ELSE h.units END units,
+      h.average_cost_cents, h.invested_cents, h.withdrawn_cents,
       h.price_minor, h.price_scale, h.price_currency, h.fx_to_eur, h.price_eur_minor,
       h.market_value_cents, h.quote_source, h.quoted_at, h.is_locked
      FROM instruments i
+     JOIN periods selected ON selected.id = ?
      LEFT JOIN holdings h ON h.instrument_id = i.id AND h.period_id = ?
      WHERE i.category = ? AND i.active = 1
      ORDER BY i.sort_order, i.name`,
-  ).bind(periodId, category).all();
+  ).bind(periodId, periodId, category).all();
   const pension = category === "pension"
     ? await c.env.DB.prepare("SELECT * FROM pension_entries WHERE period_id = ?").bind(periodId).first()
     : null;
@@ -828,6 +854,17 @@ app.put(
     const allowed = await c.env.DB.prepare("SELECT id FROM instruments WHERE category = ?").bind(category).all<{ id: number }>();
     const ids = new Set(allowed.results.map((item) => item.id));
     if (items.some((item) => !ids.has(item.instrumentId))) return c.json({ error: "Instrumento fuera de categoría" }, 400);
+    const stockBalances = category === "stocks"
+      ? await c.env.DB.prepare(
+          `SELECT t.instrument_id, COALESCE(SUM(t.units), 0) units
+           FROM stock_transactions t JOIN periods selected ON selected.id = ?
+           WHERE substr(t.trade_date, 1, 7) <= substr(selected.month, 1, 7)
+           GROUP BY t.instrument_id`,
+        ).bind(periodId).all<{ instrument_id: number; units: number }>()
+      : null;
+    const unitsByInstrument = new Map(
+      (stockBalances?.results ?? []).map((row) => [row.instrument_id, Number(row.units || 0)]),
+    );
     if (category === "stocks") {
       await c.env.DB.prepare(
         `UPDATE holdings SET units = 0, market_value_cents = 0, updated_at = CURRENT_TIMESTAMP
@@ -835,7 +872,10 @@ app.put(
       ).bind(periodId).run();
     }
     const statements = items.map((item) => {
-      const marketValueCents = Math.round(item.units * item.priceEur * 100);
+      const units = category === "stocks"
+        ? Number(unitsByInstrument.get(item.instrumentId) || 0)
+        : item.units;
+      const marketValueCents = Math.round(units * item.priceEur * 100);
       return c.env.DB.prepare(
         `INSERT INTO holdings
           (period_id, instrument_id, units, average_cost_cents, invested_cents, withdrawn_cents,
@@ -849,7 +889,7 @@ app.put(
            is_locked=excluded.is_locked,
            updated_at=CURRENT_TIMESTAMP`,
       ).bind(
-        periodId, item.instrumentId, item.units, item.averageCostCents ?? null, item.investedCents ?? null,
+        periodId, item.instrumentId, units, item.averageCostCents ?? null, item.investedCents ?? null,
         item.withdrawnCents, Math.round(item.price * 10000), item.priceCurrency, item.fxToEur,
         Math.round(item.priceEur * 10000), marketValueCents, item.quoteSource, item.quotedAt,
         category === "stocks" ? 1 : 0,

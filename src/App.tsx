@@ -2776,7 +2776,7 @@ function Stocks({
     }),
   );
   const stockRows = state.items
-    .map((item, index) => {
+    .map((item) => {
       const info = byId.get(item.id);
       const livePrice = state.previews[item.id]?.quote?.priceEur;
       const price = priceForStock(item);
@@ -2813,7 +2813,7 @@ function Stocks({
           : 0,
         status,
       };
-      return { item, index, info, livePrice, price, value, result, net, sortValues };
+      return { item, info, livePrice, price, value, result, net, sortValues };
     })
     .sort((left, right) => {
       const a = left.sortValues[stockSort.key];
@@ -3165,7 +3165,7 @@ function Stocks({
             </thead>
             <tbody>
               {stockRows.map(
-                ({ item, index, info, livePrice, price, value, result, net }) => {
+                ({ item, info, livePrice, price, value, result, net }) => {
                 return (
                   <tr
                     key={item.id}
@@ -3199,23 +3199,8 @@ function Stocks({
                       )}
                     </td>
                     <td className="number">
-                      <input
-                        className="number-field"
-                        disabled={locked}
-                        value={item.units ?? 0}
-                        onChange={(event) =>
-                          state.setItems(
-                            state.items.map((entry, itemIndex) =>
-                              itemIndex === index
-                                ? {
-                                    ...entry,
-                                    units: Number(event.target.value),
-                                  }
-                                : entry,
-                            ),
-                          )
-                        }
-                      />
+                      <strong>{decimal.format(Number(item.units || 0))}</strong>
+                      <small>Calculadas por movimientos</small>
                     </td>
                     <td className="number">
                       <strong>{euro.format(value)}</strong>
