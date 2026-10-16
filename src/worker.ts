@@ -515,6 +515,9 @@ app.patch(
   async (c) => {
     const id = Number(c.req.param("id"));
     const data = c.req.valid("json");
+    const previousSave = await c.env.DB.prepare(
+      "SELECT updated_at FROM summary_snapshots WHERE period_id = ?",
+    ).bind(id).first<{ updated_at: string }>();
     await c.env.DB.prepare(
       `UPDATE summary_snapshots SET
         current_account_cents = COALESCE(?, current_account_cents),
@@ -523,6 +526,9 @@ app.patch(
        WHERE period_id = ?`,
     ).bind(data.currentAccountCents ?? null, data.savingsAccountCents ?? null, data.piasCents ?? null, id).run();
     if (data.notes !== undefined) await c.env.DB.prepare("UPDATE periods SET notes = ? WHERE id = ?").bind(data.notes, id).run();
+    await c.env.DB.prepare(
+      "UPDATE periods SET closed_at = COALESCE(closed_at, ?) WHERE id = ?",
+    ).bind(previousSave?.updated_at ?? new Date().toISOString(), id).run();
     await recomputeSummary(c.env.DB, id);
     return c.json({ ok: true });
   },

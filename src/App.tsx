@@ -792,14 +792,14 @@ function Summary({
           value={form.current}
           onChange={(value) => setForm({ ...form, current: value })}
           tone="mint"
-          detail={period.closed_at ? `Mes cerrado el ${labelSavedDate(period.closed_at)}` : "Mes pendiente de cierre"}
+          detail={period.closed_at ? `Cierre guardado el ${labelSavedDate(period.closed_at)}` : "Cierre pendiente de guardar"}
         />
         <EditableMetric
           label="Cuenta ahorro"
           value={form.savings}
           onChange={(value) => setForm({ ...form, savings: value })}
           tone="blue"
-          detail={period.closed_at ? `Mes cerrado el ${labelSavedDate(period.closed_at)}` : "Mes pendiente de cierre"}
+          detail={period.closed_at ? `Cierre guardado el ${labelSavedDate(period.closed_at)}` : "Cierre pendiente de guardar"}
         />
         <EditableMetric
           label="Ahorro"
