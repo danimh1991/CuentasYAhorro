@@ -486,6 +486,20 @@ th:not(.number) .sort-button { justify-content: flex-start; }
   margin-top: 18px;
 }
 
+.dividend-panel .table-scroll {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
+}
+
+.dividend-panel table {
+  min-width: 780px;
+}
+
+.table-scroll-hint {
+  display: none;
+}
+
 .empty-table {
   padding: 30px;
   color: #89958e;
@@ -683,37 +697,45 @@ th:not(.number) .sort-button { justify-content: flex-start; }
   }
   .stock-summary-card dd { margin-top: 3px; text-align: left; }
 
+  .dividend-panel .table-scroll:focus-visible {
+    outline: 2px solid #218b6d;
+    outline-offset: -2px;
+  }
+
+  .table-scroll-hint {
+    display: block;
+    margin: -5px 12px 12px;
+    color: #728078;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
   .savings-history .table-scroll,
-  .pension-history-table .table-scroll,
-  .dividend-panel .table-scroll {
+  .pension-history-table .table-scroll {
     overflow: visible;
   }
 
   .savings-history table,
-  .pension-history-table table,
-  .dividend-panel table {
+  .pension-history-table table {
     display: block;
     min-width: 0;
     white-space: normal;
   }
 
   .savings-history thead,
-  .pension-history-table thead,
-  .dividend-panel thead {
+  .pension-history-table thead {
     display: none;
   }
 
   .savings-history tbody,
-  .pension-history-table tbody,
-  .dividend-panel tbody {
+  .pension-history-table tbody {
     display: grid;
     gap: 12px;
     padding: 0 12px 12px;
   }
 
   .savings-history tr,
-  .pension-history-table tr,
-  .dividend-panel tr {
+  .pension-history-table tr {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     overflow: hidden;
@@ -723,8 +745,7 @@ th:not(.number) .sort-button { justify-content: flex-start; }
   }
 
   .savings-history td,
-  .pension-history-table td,
-  .dividend-panel td {
+  .pension-history-table td {
     display: flex;
     min-width: 0;
     flex-direction: column;
@@ -737,8 +758,7 @@ th:not(.number) .sort-button { justify-content: flex-start; }
   }
 
   .savings-history td::before,
-  .pension-history-table td::before,
-  .dividend-panel td::before {
+  .pension-history-table td::before {
     content: attr(data-label);
     color: #829088;
     font-size: 9px;
@@ -748,21 +768,15 @@ th:not(.number) .sort-button { justify-content: flex-start; }
   }
 
   .savings-history td:first-child,
-  .pension-history-table td:first-child,
-  .dividend-panel td:first-child,
-  .dividend-panel td:last-child,
-  .dividend-panel .empty-table {
+  .pension-history-table td:first-child {
     grid-column: 1 / -1;
   }
 
   .savings-history td:first-child,
-  .pension-history-table td:first-child,
-  .dividend-panel td:first-child {
+  .pension-history-table td:first-child {
     border-top: 0;
     background: #f7f9f7;
   }
-
-  .dividend-panel .row-actions { justify-content: flex-start; }
 
   .panel-heading {
     gap: 12px;

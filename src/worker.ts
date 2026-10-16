@@ -187,9 +187,15 @@ app.post("/api/auth/logout", (c) => {
 
 app.get("/api/summary", async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT p.id, p.month, p.status, p.notes,
+    `SELECT p.id, p.month, p.status, p.notes, p.closed_at,
       s.current_account_cents, s.savings_account_cents, s.pias_cents,
-      s.liberty_cents, s.pension_cents, s.stocks_cents, s.total_cents
+      s.liberty_cents, s.pension_cents, s.stocks_cents, s.total_cents,
+      COALESCE((SELECT MAX(se.updated_at) FROM savings_entries se WHERE se.period_id = p.id), s.updated_at) savings_saved_at,
+      COALESCE((SELECT MAX(h.quoted_at) FROM holdings h JOIN instruments i ON i.id = h.instrument_id
+        WHERE h.period_id = p.id AND i.category = 'liberty'), p.closed_at, s.updated_at) liberty_saved_at,
+      COALESCE(p.closed_at, s.updated_at) pension_saved_at,
+      COALESCE((SELECT MAX(h.quoted_at) FROM holdings h JOIN instruments i ON i.id = h.instrument_id
+        WHERE h.period_id = p.id AND i.category = 'stocks'), p.closed_at, s.updated_at) stocks_saved_at
      FROM periods p
      LEFT JOIN summary_snapshots s ON s.period_id = p.id
      ORDER BY p.month ASC`,

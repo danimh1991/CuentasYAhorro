@@ -21,6 +21,11 @@ type Period = {
   pension_cents?: number | null;
   stocks_cents?: number | null;
   total_cents?: number | null;
+  closed_at?: string | null;
+  savings_saved_at?: string | null;
+  liberty_saved_at?: string | null;
+  pension_saved_at?: string | null;
+  stocks_saved_at?: string | null;
 };
 type Instrument = {
   id: number;
@@ -205,6 +210,15 @@ const toCents = (value: string) =>
 const fromCents = (value?: number | null) => ((value ?? 0) / 100).toFixed(2);
 const labelMonth = (month: string) =>
   monthFormat.format(new Date(`${month.slice(0, 7)}-01T12:00:00`));
+const savedDateFormat = new Intl.DateTimeFormat("es-ES", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
+const labelSavedDate = (value?: string | null) =>
+  value
+    ? savedDateFormat.format(new Date(`${value.slice(0, 10)}T12:00:00`))
+    : null;
 const apiPrefix =
   window.location.pathname === "/cuentasyahorro" ||
   window.location.pathname.startsWith("/cuentasyahorro/")
@@ -778,26 +792,40 @@ function Summary({
           value={form.current}
           onChange={(value) => setForm({ ...form, current: value })}
           tone="mint"
+          detail={period.closed_at ? `Mes cerrado el ${labelSavedDate(period.closed_at)}` : "Mes pendiente de cierre"}
         />
         <EditableMetric
           label="Cuenta ahorro"
           value={form.savings}
           onChange={(value) => setForm({ ...form, savings: value })}
           tone="blue"
+          detail={period.closed_at ? `Mes cerrado el ${labelSavedDate(period.closed_at)}` : "Mes pendiente de cierre"}
         />
         <EditableMetric
           label="Ahorro"
           value={form.pias}
           onChange={(value) => setForm({ ...form, pias: value })}
           tone="gold"
+          detail={period.savings_saved_at ? `Guardado el ${labelSavedDate(period.savings_saved_at)}` : "Sin fecha de guardado"}
         />
-        <Metric label="Fondo personal" value={period.liberty_cents} tone="violet" />
+        <Metric
+          label="Fondo personal"
+          value={period.liberty_cents}
+          tone="violet"
+          detail={period.liberty_saved_at ? `Guardado el ${labelSavedDate(period.liberty_saved_at)}` : "Sin fecha de guardado"}
+        />
         <Metric
           label="Fondo empresa"
           value={period.pension_cents}
           tone="coral"
+          detail={period.pension_saved_at ? `Guardado el ${labelSavedDate(period.pension_saved_at)}` : "Sin fecha de guardado"}
         />
-        <Metric label="Bolsa" value={period.stocks_cents} tone="green" />
+        <Metric
+          label="Bolsa"
+          value={period.stocks_cents}
+          tone="green"
+          detail={period.stocks_saved_at ? `Guardado el ${labelSavedDate(period.stocks_saved_at)}` : "Sin fecha de guardado"}
+        />
       </section>
       <section className="two-column">
         <div className="panel chart-panel">
@@ -870,11 +898,13 @@ function EditableMetric({
   value,
   onChange,
   tone,
+  detail = "Dato manual",
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   tone: string;
+  detail?: string;
 }) {
   return (
     <div className={`metric ${tone}`}>
@@ -887,7 +917,7 @@ function EditableMetric({
         />
         <b>€</b>
       </div>
-      <small>Dato manual</small>
+      <small>{detail}</small>
     </div>
   );
 }
@@ -895,16 +925,18 @@ function Metric({
   label,
   value,
   tone,
+  detail = "Calculado desde el detalle",
 }: {
   label: string;
   value?: number | null;
   tone: string;
+  detail?: string;
 }) {
   return (
     <div className={`metric ${tone}`}>
       <span>{label}</span>
       <strong>{cents(value)}</strong>
-      <small>Calculado desde el detalle</small>
+      <small>{detail}</small>
     </div>
   );
 }
@@ -3466,7 +3498,14 @@ function Stocks({
           </div>
           <span>{cents(dividendTotal)} acumulados</span>
         </div>
-        <div className="table-scroll">
+        <p className="table-scroll-hint" aria-hidden="true">
+          Desliza la tabla para ver todas las columnas →
+        </p>
+        <div
+          className="table-scroll"
+          tabIndex={0}
+          aria-label="Tabla de dividendos; desplaza horizontalmente para ver todas las columnas"
+        >
           <table>
             <thead>
               <tr>
@@ -3484,28 +3523,28 @@ function Stocks({
               {dividends.length ? (
                 dividends.map((item) => (
                   <tr key={item.id}>
-                    <td data-label="Fecha">
+                    <td>
                       {new Intl.DateTimeFormat("es-ES").format(
                         new Date(`${item.payment_date}T12:00:00`),
                       )}
                     </td>
-                    <td data-label="Activo">
+                    <td>
                       <strong>{item.instrument_name}</strong>
                     </td>
-                    <td className="number" data-label="Por acción">
+                    <td className="number">
                       {item.per_share_minor != null && item.per_share_scale
                         ? `${decimal.format(item.per_share_minor / item.per_share_scale)} ${item.currency}`
                         : "—"}
                     </td>
-                    <td className="number positive" data-label="Importe EUR">
+                    <td className="number positive">
                       {cents(item.amount_eur_cents)}
                     </td>
-                    <td className="number" data-label="Invertido al pago">
+                    <td className="number">
                       {item.invested_at_payment_cents
                         ? cents(item.invested_at_payment_cents)
                         : "—"}
                     </td>
-                    <td className="number positive" data-label="Rentabilidad">
+                    <td className="number positive">
                       {item.invested_at_payment_cents
                         ? percent.format(
                             item.amount_eur_cents /
@@ -3513,13 +3552,13 @@ function Stocks({
                           )
                         : "—"}
                     </td>
-                    <td data-label="Divisa / cambio">
+                    <td>
                       {item.currency}
                       {item.currency !== "EUR"
                         ? ` · ${decimal.format(item.fx_to_eur)}`
                         : ""}
                     </td>
-                    <td data-label="Acciones">
+                    <td>
                       <div className="row-actions">
                         <button
                           type="button"
