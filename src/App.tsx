@@ -493,7 +493,12 @@ function NavItem({
   children: React.ReactNode;
 }) {
   return (
-    <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick}>
+    <button
+      className={`nav-item ${active ? "active" : ""}`}
+      onClick={onClick}
+      aria-label={typeof children === "string" ? children : undefined}
+      title={typeof children === "string" ? children : undefined}
+    >
       <span><NavIcon name={icon} /></span>
       {children}
     </button>
@@ -1938,11 +1943,15 @@ function Savings({
                 );
                 return (
                   <tr key={month}>
-                    <td>
+                    <td data-label="Mes">
                       <strong>{labelMonth(month)}</strong>
                     </td>
                     {savingsBuckets.map((bucket) => (
-                      <td className="number" key={`${month}-${bucket}-c`}>
+                      <td
+                        className="number"
+                        data-label={`${labels[bucket]} · Aportación`}
+                        key={`${month}-${bucket}-c`}
+                      >
                         {cents(
                           rows.find((entry) => entry.bucket === bucket)
                             ?.contribution_cents,
@@ -1950,23 +1959,29 @@ function Savings({
                       </td>
                     ))}
                     {savingsBuckets.map((bucket) => (
-                      <td className="number" key={`${month}-${bucket}-v`}>
+                      <td
+                        className="number"
+                        data-label={`${labels[bucket]} · Valor actual`}
+                        key={`${month}-${bucket}-v`}
+                      >
                         {cents(
                           rows.find((entry) => entry.bucket === bucket)
                             ?.current_value_cents,
                         )}
                       </td>
                     ))}
-                    <td className="number">
+                    <td className="number" data-label="Total actual">
                       <strong>{cents(value)}</strong>
                     </td>
                     <td
                       className={`number ${diff >= 0 ? "positive" : "negative"}`}
+                      data-label="Diferencia del mes"
                     >
                       {cents(diff)}
                     </td>
                     <td
                       className={`number ${gain >= 0 ? "positive" : "negative"}`}
+                      data-label="Diferencia de aportaciones"
                     >
                       {cents(gain)}
                     </td>
@@ -2244,7 +2259,7 @@ function Pension({
         <div className="table-scroll">
           <table>
             <thead><tr><th>Mes</th><th className="number">Empresa</th><th className="number">Personal</th><th className="number">Aportado acum.</th><th className="number">Valor</th><th className="number">Ganancia</th><th className="number">Rentabilidad</th><th className="number">Variación mes</th></tr></thead>
-            <tbody>{[...history].reverse().map((item) => <tr key={item.period_id}><td><strong>{labelMonth(item.month)}</strong></td><td className="number">{cents(item.employer_cents)}</td><td className="number">{cents(item.personal_cents)}</td><td className="number">{cents(item.cumulative_contributions_cents)}</td><td className="number"><strong>{cents(item.current_value_cents)}</strong></td><td className={`number ${item.gain_cents >= 0 ? "positive" : "negative"}`}>{cents(item.gain_cents)}</td><td className={`number ${item.gain_cents >= 0 ? "positive" : "negative"}`}>{item.cumulative_contributions_cents ? percent.format(item.gain_cents / item.cumulative_contributions_cents) : "—"}</td><td className={`number ${item.month_change_cents >= 0 ? "positive" : "negative"}`}>{cents(item.month_change_cents)}</td></tr>)}</tbody>
+            <tbody>{[...history].reverse().map((item) => <tr key={item.period_id}><td data-label="Mes"><strong>{labelMonth(item.month)}</strong></td><td className="number" data-label="Empresa">{cents(item.employer_cents)}</td><td className="number" data-label="Personal">{cents(item.personal_cents)}</td><td className="number" data-label="Aportado acumulado">{cents(item.cumulative_contributions_cents)}</td><td className="number" data-label="Valor"><strong>{cents(item.current_value_cents)}</strong></td><td className={`number ${item.gain_cents >= 0 ? "positive" : "negative"}`} data-label="Ganancia">{cents(item.gain_cents)}</td><td className={`number ${item.gain_cents >= 0 ? "positive" : "negative"}`} data-label="Rentabilidad">{item.cumulative_contributions_cents ? percent.format(item.gain_cents / item.cumulative_contributions_cents) : "—"}</td><td className={`number ${item.month_change_cents >= 0 ? "positive" : "negative"}`} data-label="Variación del mes">{cents(item.month_change_cents)}</td></tr>)}</tbody>
           </table>
         </div>
       </section>
@@ -2981,37 +2996,35 @@ function Stocks({
           manualmente.
         </div>
       )}
-      <section className="metric-grid stock-kpis">
-        <Metric
-          label="Valor posiciones"
-          value={Math.round(positionsTotal * 100)}
-          tone="green"
-        />
-        <Metric
-          label="Efectivo en Bolsa"
-          value={cashBalanceCents}
-          tone={cashBalanceCents >= 0 ? "gold" : "coral"}
-        />
-        <Metric label="Total aportado" value={contributedTotal} tone="blue" />
-        <Metric label="Total retirado" value={withdrawnTotal} tone="gold" />
-        <Metric label="Dividendos" value={dividendTotal} tone="violet" />
-        <Metric
-          label="Resultado total"
-          value={resultTotal}
-          tone={resultTotal >= 0 ? "green" : "coral"}
-        />
-        <div className="metric violet">
-          <span>Rentabilidad total</span>
-          <strong>{totalReturn == null ? "—" : percent.format(totalReturn)}</strong>
-          <small>Solo flujos externos · incluye efectivo y dividendos</small>
-        </div>
-        <div className="metric gold">
-          <span>Rentabilidad dividendos</span>
-          <strong>
-            {dividendReturn == null ? "—" : percent.format(dividendReturn)}
-          </strong>
-          <small>Dividendos / total aportado</small>
-        </div>
+      <section className="stock-kpis" aria-label="Resumen de Bolsa">
+        <article className="stock-summary-card green">
+          <p className="eyebrow">Patrimonio en Bolsa</p>
+          <dl>
+            <div><dt>Posiciones</dt><dd>{cents(Math.round(positionsTotal * 100))}</dd></div>
+            <div><dt>Efectivo</dt><dd className={cashBalanceCents >= 0 ? "" : "negative"}>{cents(cashBalanceCents)}</dd></div>
+          </dl>
+        </article>
+        <article className="stock-summary-card blue">
+          <p className="eyebrow">Flujos externos</p>
+          <dl>
+            <div><dt>Aportado</dt><dd>{cents(contributedTotal)}</dd></div>
+            <div><dt>Retirado</dt><dd>{cents(withdrawnTotal)}</dd></div>
+          </dl>
+        </article>
+        <article className={`stock-summary-card ${resultTotal >= 0 ? "green" : "coral"}`}>
+          <p className="eyebrow">Rendimiento</p>
+          <dl>
+            <div><dt>Resultado</dt><dd className={resultTotal >= 0 ? "positive" : "negative"}>{cents(resultTotal)}</dd></div>
+            <div><dt>Rentabilidad</dt><dd className={resultTotal >= 0 ? "positive" : "negative"}>{totalReturn == null ? "—" : percent.format(totalReturn)}</dd></div>
+          </dl>
+        </article>
+        <article className="stock-summary-card violet">
+          <p className="eyebrow">Dividendos</p>
+          <dl>
+            <div><dt>Acumulado</dt><dd>{cents(dividendTotal)}</dd></div>
+            <div><dt>Rentabilidad</dt><dd>{dividendReturn == null ? "—" : percent.format(dividendReturn)}</dd></div>
+          </dl>
+        </article>
       </section>
       <StockBreakdown items={state.items} overview={overview} />
       {showForm && (
@@ -3471,28 +3484,28 @@ function Stocks({
               {dividends.length ? (
                 dividends.map((item) => (
                   <tr key={item.id}>
-                    <td>
+                    <td data-label="Fecha">
                       {new Intl.DateTimeFormat("es-ES").format(
                         new Date(`${item.payment_date}T12:00:00`),
                       )}
                     </td>
-                    <td>
+                    <td data-label="Activo">
                       <strong>{item.instrument_name}</strong>
                     </td>
-                    <td className="number">
+                    <td className="number" data-label="Por acción">
                       {item.per_share_minor != null && item.per_share_scale
                         ? `${decimal.format(item.per_share_minor / item.per_share_scale)} ${item.currency}`
                         : "—"}
                     </td>
-                    <td className="number positive">
+                    <td className="number positive" data-label="Importe EUR">
                       {cents(item.amount_eur_cents)}
                     </td>
-                    <td className="number">
+                    <td className="number" data-label="Invertido al pago">
                       {item.invested_at_payment_cents
                         ? cents(item.invested_at_payment_cents)
                         : "—"}
                     </td>
-                    <td className="number positive">
+                    <td className="number positive" data-label="Rentabilidad">
                       {item.invested_at_payment_cents
                         ? percent.format(
                             item.amount_eur_cents /
@@ -3500,13 +3513,13 @@ function Stocks({
                           )
                         : "—"}
                     </td>
-                    <td>
+                    <td data-label="Divisa / cambio">
                       {item.currency}
                       {item.currency !== "EUR"
                         ? ` · ${decimal.format(item.fx_to_eur)}`
                         : ""}
                     </td>
-                    <td>
+                    <td data-label="Acciones">
                       <div className="row-actions">
                         <button
                           type="button"

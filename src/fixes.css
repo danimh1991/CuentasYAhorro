@@ -302,7 +302,49 @@ main {
 }
 
 .stock-kpis {
-  grid-template-columns: repeat(4, 1fr);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+}
+
+.stock-summary-card {
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+}
+
+.stock-summary-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: #91a299;
+}
+
+.stock-summary-card.green::before { background: #3a9b67; }
+.stock-summary-card.blue::before { background: #6a93d3; }
+.stock-summary-card.violet::before { background: #8b79cb; }
+.stock-summary-card.coral::before { background: #d98369; }
+.stock-summary-card dl { margin: 0; }
+.stock-summary-card dl div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #edf0ed;
+}
+.stock-summary-card dl div + div { margin-top: 10px; }
+.stock-summary-card dt { color: #6d7c74; font-size: 11px; }
+.stock-summary-card dd {
+  margin: 0;
+  font: 700 15px Manrope;
+  text-align: right;
 }
 
 .modal-backdrop {
@@ -542,11 +584,12 @@ th:not(.number) .sort-button { justify-content: flex-start; }
   }
 
   .liberty-metrics,
-  .stock-kpis,
   .pension-metrics,
   .savings-editor {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  .stock-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   .market-add,
   .fund-add-row {
@@ -555,17 +598,62 @@ th:not(.number) .sort-button { justify-content: flex-start; }
 }
 
 @media(max-width: 760px) {
+  html,
+  body,
+  #root {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .sidebar {
+    height: calc(68px + env(safe-area-inset-bottom));
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  }
+
   .sidebar nav {
     margin-top: 0;
-    overflow-x: auto;
-    justify-content: flex-start;
+    gap: 2px;
+    overflow: visible;
+    justify-content: stretch;
   }
 
   .nav-item,
   .nav-item.active,
   .nav-item:not(.active) {
-    flex: 0 0 52px;
-    padding: 10px;
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 10px 4px;
+  }
+
+  .nav-item span { width: auto; }
+
+  .app-shell main {
+    padding-bottom: calc(92px + env(safe-area-inset-bottom));
+    overflow: hidden;
+  }
+
+  .period-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    width: 100%;
+  }
+
+  .period-actions select { min-width: 0; width: 100%; }
+
+  .detail-hero .action-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .detail-hero .action-row .button {
+    min-width: 0;
+    padding-inline: 10px;
+    white-space: normal;
+  }
+
+  .detail-hero .action-row .button:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 
   .movement-form {
@@ -573,7 +661,6 @@ th:not(.number) .sort-button { justify-content: flex-start; }
   }
 
   .liberty-metrics,
-  .stock-kpis,
   .pension-metrics,
   .savings-editor,
   .market-grid,
@@ -581,5 +668,112 @@ th:not(.number) .sort-button { justify-content: flex-start; }
   .fund-add-row,
   .settings-grid {
     grid-template-columns: 1fr;
+  }
+
+  .stock-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .stock-summary-card { padding: 14px 12px; }
+  .stock-summary-card .eyebrow { min-height: 27px; }
+  .stock-summary-card dl div {
+    display: block;
+    padding-top: 8px;
+  }
+  .stock-summary-card dd { margin-top: 3px; text-align: left; }
+
+  .savings-history .table-scroll,
+  .pension-history-table .table-scroll,
+  .dividend-panel .table-scroll {
+    overflow: visible;
+  }
+
+  .savings-history table,
+  .pension-history-table table,
+  .dividend-panel table {
+    display: block;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .savings-history thead,
+  .pension-history-table thead,
+  .dividend-panel thead {
+    display: none;
+  }
+
+  .savings-history tbody,
+  .pension-history-table tbody,
+  .dividend-panel tbody {
+    display: grid;
+    gap: 12px;
+    padding: 0 12px 12px;
+  }
+
+  .savings-history tr,
+  .pension-history-table tr,
+  .dividend-panel tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #fff;
+  }
+
+  .savings-history td,
+  .pension-history-table td,
+  .dividend-panel td {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    border-top: 1px solid #edf0ed;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .savings-history td::before,
+  .pension-history-table td::before,
+  .dividend-panel td::before {
+    content: attr(data-label);
+    color: #829088;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+  }
+
+  .savings-history td:first-child,
+  .pension-history-table td:first-child,
+  .dividend-panel td:first-child,
+  .dividend-panel td:last-child,
+  .dividend-panel .empty-table {
+    grid-column: 1 / -1;
+  }
+
+  .savings-history td:first-child,
+  .pension-history-table td:first-child,
+  .dividend-panel td:first-child {
+    border-top: 0;
+    background: #f7f9f7;
+  }
+
+  .dividend-panel .row-actions { justify-content: flex-start; }
+
+  .panel-heading {
+    gap: 12px;
+  }
+
+  .panel-heading > span {
+    max-width: 42%;
+    text-align: right;
+  }
+
+  .bar-row {
+    grid-template-columns: minmax(72px, 1fr) minmax(55px, 1.2fr) auto;
   }
 }
