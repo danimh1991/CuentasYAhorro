@@ -2847,7 +2847,9 @@ function Stocks({
         perShare: dividend.perShare
           ? Number(dividend.perShare.replace(",", "."))
           : undefined,
-        amount: Number(dividend.amount.replace(",", ".")),
+        amount: dividend.amount
+          ? Number(dividend.amount.replace(",", "."))
+          : undefined,
         currency: dividend.currency,
         fxToEur: dividend.fxToEur
           ? Number(dividend.fxToEur.replace(",", "."))
@@ -3213,7 +3215,9 @@ function Stocks({
           <label>
             Dividendo por acción
             <input
+              required={!dividend.amount}
               inputMode="decimal"
+              placeholder="Se calcula si indicas el importe bruto"
               value={dividend.perShare}
               onChange={(event) =>
                 setDividend({ ...dividend, perShare: event.target.value })
@@ -3223,8 +3227,9 @@ function Stocks({
           <label>
             Importe bruto
             <input
-              required
+              required={!dividend.perShare}
               inputMode="decimal"
+              placeholder="Se calcula si indicas el importe por acción"
               value={dividend.amount}
               onChange={(event) =>
                 setDividend({ ...dividend, amount: event.target.value })

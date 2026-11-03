@@ -690,26 +690,37 @@ app.put("/api/stocks/transactions/:id", zValidator("json", transactionSchema), a
 });
 
 app.get("/api/stocks/dividends", async (c) => {
-  const periodId = Number(c.req.query("periodId"));
-  const period = await c.env.DB.prepare("SELECT month FROM periods WHERE id = ?").bind(periodId).first<{ month: string }>();
   const { results } = await c.env.DB.prepare(
     `SELECT d.*, i.name instrument_name,
       (SELECT COALESCE(SUM(t.total_cents),0) FROM stock_transactions t
        WHERE t.instrument_id=d.instrument_id AND t.trade_date <= d.payment_date) invested_at_payment_cents
      FROM stock_dividends d JOIN instruments i ON i.id=d.instrument_id
-     WHERE (? IS NULL OR substr(d.payment_date,1,7) <= substr(?,1,7)) ORDER BY d.payment_date DESC, d.id DESC`,
-  ).bind(period?.month ?? null, period?.month ?? null).all();
+     ORDER BY d.payment_date DESC, d.id DESC`,
+  ).all();
   return c.json({ dividends: results });
 });
 
 const dividendSchema = z.object({
   paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), instrumentId: z.number().int(),
-  amount: z.number().positive(), currency: z.string().trim().toUpperCase().length(3),
-  perShare: z.number().nonnegative().optional(), fxToEur: z.number().positive().optional(),
+  amount: z.number().positive().optional(), currency: z.string().trim().toUpperCase().length(3),
+  perShare: z.number().positive().optional(), fxToEur: z.number().positive().optional(),
   note: z.string().trim().max(200).nullable().optional(),
+}).refine((item) => item.amount !== undefined || item.perShare !== undefined, {
+  message: "Introduce el importe por acción o el importe bruto",
 });
 
-async function dividendAmounts(item: z.infer<typeof dividendSchema>) {
+async function dividendAmounts(db: D1Database, item: z.infer<typeof dividendSchema>) {
+  const position = await db.prepare(
+    `SELECT COALESCE(SUM(units), 0) units
+     FROM stock_transactions
+     WHERE instrument_id = ? AND trade_date <= ?`,
+  ).bind(item.instrumentId, item.paymentDate).first<{ units: number }>();
+  const units = Number(position?.units || 0);
+  if (units <= 0.00000001) {
+    throw new Error("No había acciones de este activo en la fecha de pago");
+  }
+  const amount = item.amount ?? item.perShare! * units;
+  const perShare = item.perShare ?? amount / units;
   let fxToEur = item.fxToEur ?? 1;
   if (item.currency !== "EUR" && item.fxToEur === undefined) {
     const response = await fetch(`https://api.frankfurter.app/${item.paymentDate}?from=${item.currency}&to=EUR`);
@@ -718,7 +729,7 @@ async function dividendAmounts(item: z.infer<typeof dividendSchema>) {
     if (!payload.rates?.EUR) throw new Error(`Cambio ${item.currency}/EUR no disponible`);
     fxToEur = payload.rates.EUR;
   }
-  return { fxToEur, amountEurCents: Math.round(item.amount * fxToEur * 100) };
+  return { amount, perShare, units, fxToEur, amountEurCents: Math.round(amount * fxToEur * 100) };
 }
 
 app.post("/api/stocks/dividends", zValidator("json", dividendSchema), async (c) => {
@@ -728,7 +739,7 @@ app.post("/api/stocks/dividends", zValidator("json", dividendSchema), async (c) 
   if (!instrument) return c.json({ error: "Activo no encontrado" }, 404);
   let calculated: Awaited<ReturnType<typeof dividendAmounts>>;
   try {
-    calculated = await dividendAmounts(item);
+    calculated = await dividendAmounts(c.env.DB, item);
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "No se pudo calcular el cambio" }, 422);
   }
@@ -736,8 +747,8 @@ app.post("/api/stocks/dividends", zValidator("json", dividendSchema), async (c) 
     `INSERT INTO stock_dividends
       (payment_date,instrument_id,gross_minor,amount_scale,currency,fx_to_eur,amount_eur_cents,note,source,per_share_minor,per_share_scale)
      VALUES (?,?,?,10000,?,?,?,?,'manual',?,1000000) RETURNING id`,
-  ).bind(item.paymentDate, item.instrumentId, Math.round(item.amount * 10000), item.currency, calculated.fxToEur,
-    calculated.amountEurCents, item.note || null, item.perShare === undefined ? null : Math.round(item.perShare * 1000000))
+  ).bind(item.paymentDate, item.instrumentId, Math.round(calculated.amount * 10000), item.currency, calculated.fxToEur,
+    calculated.amountEurCents, item.note || null, Math.round(calculated.perShare * 1000000))
     .first<{ id: number }>();
   return c.json({ ...inserted, ...calculated }, 201);
 });
@@ -753,7 +764,7 @@ app.put("/api/stocks/dividends/:id", zValidator("json", dividendSchema), async (
   if (!existing) return c.json({ error: "Dividendo no encontrado" }, 404);
   let calculated: Awaited<ReturnType<typeof dividendAmounts>>;
   try {
-    calculated = await dividendAmounts(item);
+    calculated = await dividendAmounts(c.env.DB, item);
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "No se pudo calcular el cambio" }, 422);
   }
@@ -762,9 +773,9 @@ app.put("/api/stocks/dividends/:id", zValidator("json", dividendSchema), async (
       currency=?, fx_to_eur=?, amount_eur_cents=?, note=?, source='manual', per_share_minor=?, per_share_scale=1000000
      WHERE id=?`,
   ).bind(
-    item.paymentDate, item.instrumentId, Math.round(item.amount * 10000), item.currency,
+    item.paymentDate, item.instrumentId, Math.round(calculated.amount * 10000), item.currency,
     calculated.fxToEur, calculated.amountEurCents, item.note || null,
-    item.perShare === undefined ? null : Math.round(item.perShare * 1000000), id,
+    Math.round(calculated.perShare * 1000000), id,
   ).run();
   return c.json({ ok: true, ...calculated });
 });
