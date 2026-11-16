@@ -406,6 +406,52 @@ main {
   text-transform: uppercase;
 }
 
+.instrument-add-form {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.5fr) repeat(3, minmax(120px, 1fr)) 80px auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid #dfe5e0;
+  border-radius: 12px;
+  background: #f7f9f7;
+}
+
+.instrument-add-heading {
+  grid-column: 1 / -1;
+}
+
+.instrument-add-heading h3 {
+  margin: 0;
+  font: 700 17px Manrope;
+}
+
+.instrument-add-form label {
+  color: #65736c;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.instrument-add-form input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 9px;
+}
+
+@media (max-width: 900px) {
+  .instrument-add-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .instrument-add-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .icon-button {
   border: 0;
   background: #eff3f0;

@@ -801,10 +801,11 @@ const instrumentSchema = z.object({
 app.post("/api/instruments", zValidator("json", instrumentSchema), async (c) => {
   const data = c.req.valid("json");
   const inserted = await c.env.DB.prepare(
-    `INSERT INTO instruments (category, name, isin, ticker, currency, sort_order)
-     VALUES (?, ?, ?, ?, ?, COALESCE((SELECT MAX(sort_order) + 10 FROM instruments WHERE category = ?), 10))
-     RETURNING id`,
-  ).bind(data.category, data.name, data.isin || null, data.ticker || null, data.currency, data.category).first();
+    `INSERT INTO instruments (category, name, isin, ticker, reference_symbol, currency, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT MAX(sort_order) + 10 FROM instruments WHERE category = ?), 10))
+     RETURNING id, category, name, isin, ticker, reference_symbol, currency`,
+  ).bind(data.category, data.name, data.isin || null, data.ticker || null,
+    data.referenceSymbol || null, data.currency, data.category).first();
   return c.json(inserted, 201);
 });
 

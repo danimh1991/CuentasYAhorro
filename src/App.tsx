@@ -1180,15 +1180,25 @@ function QuoteStatus({
 
 function InstrumentEditor({
   items,
+  category,
   onClose,
   onSaved,
 }: {
   items: Instrument[];
+  category: "liberty" | "stocks";
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
   const [drafts, setDrafts] = useState(items.map((item) => ({ ...item })));
+  const [newItem, setNewItem] = useState({
+    name: "",
+    isin: "",
+    ticker: "",
+    referenceSymbol: "",
+    currency: "EUR",
+  });
   const [saving, setSaving] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState("");
   const update = (id: number, field: keyof Instrument, value: string) =>
     setDrafts(
@@ -1196,6 +1206,44 @@ function InstrumentEditor({
         item.id === id ? { ...item, [field]: value } : item,
       ),
     );
+  const add = async (event: FormEvent) => {
+    event.preventDefault();
+    setAdding(true);
+    setMessage("");
+    try {
+      const inserted = await api<Instrument>("/api/instruments", {
+        method: "POST",
+        body: JSON.stringify({
+          category,
+          name: newItem.name,
+          isin: newItem.isin || null,
+          ticker: newItem.ticker || null,
+          referenceSymbol: newItem.referenceSymbol || null,
+          currency: newItem.currency,
+        }),
+      });
+      setDrafts((current) => [...current, inserted]);
+      setNewItem({
+        name: "",
+        isin: "",
+        ticker: "",
+        referenceSymbol: "",
+        currency: "EUR",
+      });
+      await onSaved();
+      setMessage(
+        category === "stocks"
+          ? "Activo añadido a la lista."
+          : "Fondo añadido a la lista.",
+      );
+    } catch (cause) {
+      setMessage(
+        cause instanceof Error ? cause.message : "No se pudo añadir",
+      );
+    } finally {
+      setAdding(false);
+    }
+  };
   const save = async () => {
     setSaving(true);
     setMessage("");
@@ -1238,8 +1286,9 @@ function InstrumentEditor({
           </button>
         </div>
         <p className="modal-copy">
-          Puedes corregir nombre, ISIN, ticker, símbolo de referencia y divisa.
-          Los cambios se usarán en la siguiente consulta de cotizaciones.
+          Puedes añadir y corregir nombre, ISIN, ticker, símbolo de referencia
+          y divisa. Los cambios se usarán en la siguiente consulta de
+          cotizaciones.
         </p>
         {message && <div className="inline-message">{message}</div>}
         <div className="table-scroll">
@@ -1310,6 +1359,78 @@ function InstrumentEditor({
             </tbody>
           </table>
         </div>
+        <form className="instrument-add-form" onSubmit={add}>
+          <div className="instrument-add-heading">
+            <p className="eyebrow">Nuevo</p>
+            <h3>{category === "stocks" ? "Añadir activo" : "Añadir fondo"}</h3>
+          </div>
+          <label>
+            Nombre
+            <input
+              required
+              maxLength={160}
+              value={newItem.name}
+              onChange={(event) =>
+                setNewItem({ ...newItem, name: event.target.value })
+              }
+            />
+          </label>
+          <label>
+            ISIN
+            <input
+              maxLength={12}
+              value={newItem.isin}
+              onChange={(event) =>
+                setNewItem({
+                  ...newItem,
+                  isin: event.target.value.toUpperCase(),
+                })
+              }
+            />
+          </label>
+          <label>
+            Ticker API
+            <input
+              maxLength={32}
+              value={newItem.ticker}
+              onChange={(event) =>
+                setNewItem({ ...newItem, ticker: event.target.value })
+              }
+            />
+          </label>
+          <label>
+            Símbolo
+            <input
+              maxLength={32}
+              value={newItem.referenceSymbol}
+              onChange={(event) =>
+                setNewItem({
+                  ...newItem,
+                  referenceSymbol: event.target.value,
+                })
+              }
+            />
+          </label>
+          <label>
+            Divisa
+            <input
+              required
+              className="currency-field"
+              minLength={3}
+              maxLength={3}
+              value={newItem.currency}
+              onChange={(event) =>
+                setNewItem({
+                  ...newItem,
+                  currency: event.target.value.toUpperCase(),
+                })
+              }
+            />
+          </label>
+          <button className="button primary" disabled={adding}>
+            {adding ? "Añadiendo…" : "+ Añadir"}
+          </button>
+        </form>
         <div className="modal-actions">
           <button className="button secondary" onClick={onClose}>
             Cancelar
@@ -1607,6 +1728,7 @@ function Liberty({
       {editing && (
         <InstrumentEditor
           items={state.items}
+          category="liberty"
           onClose={() => setEditing(false)}
           onSaved={state.load}
         />
@@ -3601,6 +3723,7 @@ function Stocks({
       {editing && (
         <InstrumentEditor
           items={state.items}
+          category="stocks"
           onClose={() => setEditing(false)}
           onSaved={state.load}
         />
