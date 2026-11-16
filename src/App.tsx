@@ -456,7 +456,11 @@ function App() {
         ) : view === "pension" ? (
           <Pension period={selected} onRefresh={loadSummary} />
         ) : view === "stocks" ? (
-          <Stocks period={selected} onRefresh={loadSummary} />
+          <Stocks
+            period={selected}
+            isLatest={selected.id === periods.at(-1)?.id}
+            onRefresh={loadSummary}
+          />
         ) : view === "markets" ? (
           <Markets />
         ) : (
@@ -2740,9 +2744,11 @@ function StockBreakdown({
 
 function Stocks({
   period,
+  isLatest,
   onRefresh,
 }: {
   period: Period;
+  isLatest: boolean;
   onRefresh: () => Promise<void>;
 }) {
   const state = usePortfolio("stocks", period.id);
@@ -2801,8 +2807,9 @@ function Stocks({
     period.status === "closed" || state.items.some((item) => item.is_locked);
   const priceForStock = (item: Instrument) => {
     const saved = (item.price_eur_minor ?? 0) / 10000;
-    if (locked) return saved;
-    return quoteFor(item, state.previews, state.manual)?.priceEur ?? saved;
+    const current = quoteFor(item, state.previews, state.manual)?.priceEur;
+    if (locked && !isLatest) return saved;
+    return current ?? saved;
   };
   const positionsTotal = state.items.reduce(
     (sum, item) =>
@@ -3028,6 +3035,7 @@ function Stocks({
       const info = byId.get(item.id);
       const livePrice = state.previews[item.id]?.quote?.priceEur;
       const price = priceForStock(item);
+      const usesCurrentPrice = locked && isLatest && livePrice != null;
       const value = Number(item.units || 0) * price;
       const result =
         value * 100 -
@@ -3061,7 +3069,17 @@ function Stocks({
           : 0,
         status,
       };
-      return { item, info, livePrice, price, value, result, net, sortValues };
+      return {
+        item,
+        info,
+        livePrice,
+        price,
+        usesCurrentPrice,
+        value,
+        result,
+        net,
+        sortValues,
+      };
     })
     .sort((left, right) => {
       const a = left.sortValues[stockSort.key];
@@ -3108,7 +3126,9 @@ function Stocks({
           <h2>{euro.format(total)}</h2>
           <p>
             {locked
-              ? "Cierre guardado: la foto mensual no se sobrescribe"
+              ? isLatest
+                ? "Cierre guardado: consulta el valor actual sin sobrescribirlo"
+                : "Cierre histórico guardado: la foto mensual no se sobrescribe"
               : "Valor estimado de la cartera"}
           </p>
         </div>
@@ -3131,9 +3151,18 @@ function Stocks({
           <button
             className="button secondary"
             onClick={state.preview}
-            disabled={state.busy}
+            disabled={state.busy || !isLatest}
+            title={
+              isLatest
+                ? "Consultar cotizaciones actuales"
+                : "Las cotizaciones solo se actualizan en el último mes"
+            }
           >
-            {state.busy ? "Consultando…" : "↻ Cotizaciones"}
+            {state.busy
+              ? "Consultando…"
+              : isLatest
+                ? "↻ Cotizaciones"
+                : "Cotizaciones históricas"}
           </button>
           <button
             className="button primary"
@@ -3416,7 +3445,16 @@ function Stocks({
             </thead>
             <tbody>
               {stockRows.map(
-                ({ item, info, livePrice, price, value, result, net }) => {
+                ({
+                  item,
+                  info,
+                  livePrice,
+                  price,
+                  usesCurrentPrice,
+                  value,
+                  result,
+                  net,
+                }) => {
                 return (
                   <tr
                     key={item.id}
@@ -3431,9 +3469,13 @@ function Stocks({
                       {price ? (
                         <>
                           <strong>{euro.format(price)}</strong>
-                          {locked && livePrice != null && (
+                          {usesCurrentPrice ? (
+                            <small>
+                              Cotización actual · cierre sin modificar
+                            </small>
+                          ) : locked && livePrice != null ? (
                             <small>Cotización actual: {euro.format(livePrice)}</small>
-                          )}
+                          ) : null}
                         </>
                       ) : (
                         <input
